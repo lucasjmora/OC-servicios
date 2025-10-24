@@ -1,0 +1,38 @@
+# Configuración de Ejemplo para OC Servicios Backend
+# Copia este archivo como .env y configura los valores
+
+# Puerto del servidor
+PORT=5000
+
+# Entorno
+NODE_ENV=development
+
+# MongoDB Atlas Connection
+# Puedes configurar esto desde la interfaz web en Configuración > Actualización de datos
+# o directamente aquí para que se use al iniciar el servidor
+MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/oc_servicios
+
+# Nombres de Base de Datos y Colecciones (opcional, por defecto)
+DB_NAME=oc_servicios
+COLLECTION_CITAS=citas
+COLLECTION_INGRESOS=ingresos
+COLLECTION_CONFIG=configuracion
+
+# Rutas de archivos Excel (opcional, se pueden configurar desde la UI)
+# Ejemplo Windows: C:\\Datos\\Citas.xlsx
+# Ejemplo Linux/Mac: /home/usuario/datos/citas.xlsx
+CITAS_FILE_PATH=
+INGRESOS_FILE_PATH=
+
+
+
+
+
+
+
+
+
+
+
+
+
