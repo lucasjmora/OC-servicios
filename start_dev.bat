@@ -25,7 +25,7 @@ echo.
 echo [2/6] Configurando persistencia MongoDB...
 echo Configurando archivo .env para conexión automática...
 if not exist "backend\.env" (
-    echo MONGODB_URI=mongodb+srv://lucasjmora:rUAhjnEbxWJXv9nY@lm-mongodb.mw28zss.mongodb.net/oc_servicios?retryWrites=true^&w=majority > backend\.env
+    echo MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/oc_servicios?retryWrites=true^&w=majority > backend\.env
     echo ✓ Archivo .env creado con configuración persistente
 ) else (
     echo ✓ Archivo .env ya existe

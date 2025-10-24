@@ -1,6 +1,6 @@
 {
   "mongodb": {
-    "uri": "mongodb+srv://lucasjmora:rUAhjnEbxWJXv9nY@lm-mongodb.mw28zss.mongodb.net/oc_servicios?retryWrites=true&w=majority",
+    "uri": "mongodb+srv://usuario:password@cluster.mongodb.net/oc_servicios?retryWrites=true&w=majority",
     "database": "oc_servicios",
     "collections": {
       "citas": "citas",
@@ -8,8 +8,8 @@
     }
   },
   "filePaths": {
-    "citas": "C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx",
-    "ingresos": "C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx"
+    "citas": "ruta/ejemplo/citas.xlsx",
+    "ingresos": "ruta/ejemplo/ingresos.xlsx"
   },
   "scheduler": {
     "enabled": false,
