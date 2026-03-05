@@ -6,7 +6,7 @@ import {
   getComentariosOportunidad,
   addComentarioOportunidad 
 } from '../services/api';
-import { FaTimes, FaComment, FaUser, FaClock, FaPlus, FaBell, FaCheck, FaExclamationTriangle, FaEye, FaCog } from 'react-icons/fa';
+import { FaTimes, FaComment, FaUser, FaClock, FaPlus, FaBell, FaCheck, FaExclamationTriangle, FaEye, FaCog, FaHistory, FaCar, FaBuilding, FaEnvelope, FaPhone } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -26,8 +26,9 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
   });
   const [cambioEstado, setCambioEstado] = useState({
     estado: '',
-    motivo: '',
-    usuario: ''
+    subEstado: '',
+    usuario: '',
+    comentario: ''
   });
   const [alarma, setAlarma] = useState({
     fechaHora: '',
@@ -94,12 +95,17 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
     e.preventDefault();
     
     if (!cambioEstado.estado || !cambioEstado.usuario) {
-      setError('Estado y usuario son requeridos');
+      setError('Estado Oportunidad y usuario son requeridos');
       return;
     }
 
-    if (cambioEstado.estado === 'cerrado' && !cambioEstado.motivo.trim()) {
-      setError('El motivo de cierre es obligatorio');
+    if (cambioEstado.estado === 'abierto' && !cambioEstado.subEstado) {
+      setError('SubEstado Oportunidad es requerido cuando el estado es "abierto"');
+      return;
+    }
+
+    if (cambioEstado.estado === 'cerrado' && !cambioEstado.comentario?.trim()) {
+      setError('Un comentario es obligatorio para cerrar la oportunidad');
       return;
     }
 
@@ -107,11 +113,21 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
       setSaving(true);
       setError('');
 
-      await updateEstadoOportunidad(referencia, {
+      // Solo enviar subEstado si el estado es "abierto", sino enviar undefined
+      const datosParaEnviar = {
         estado: cambioEstado.estado,
-        motivo: cambioEstado.motivo,
         usuario: cambioEstado.usuario
-      });
+      };
+      
+      if (cambioEstado.estado === 'abierto' && cambioEstado.subEstado) {
+        datosParaEnviar.subEstado = cambioEstado.subEstado;
+      }
+      
+      if (cambioEstado.estado === 'cerrado' && cambioEstado.comentario?.trim()) {
+        datosParaEnviar.comentario = cambioEstado.comentario.trim();
+      }
+
+      await updateEstadoOportunidad(referencia, datosParaEnviar);
 
       // Recargar datos
       await loadOportunidad();
@@ -120,13 +136,14 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
       // Limpiar formulario
       setCambioEstado({
         estado: '',
-        motivo: '',
-        usuario: ''
+        subEstado: '',
+        usuario: '',
+        comentario: ''
       });
 
     } catch (error) {
       console.error('Error cambiando estado:', error);
-      setError('Error cambiando estado');
+      setError(error.response?.data?.error || 'Error cambiando estado oportunidad');
     } finally {
       setSaving(false);
     }
@@ -161,25 +178,69 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
 
     } catch (error) {
       console.error('Error configurando alarma:', error);
-      setError('Error configurando alarma');
+      console.error('Error completo:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack
+      });
+      const errorMessage = error.response?.data?.error || error.message || 'Error configurando alarma';
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }
   };
 
-  const getEstadoBadge = (estado) => {
-    const badges = {
-      pendiente: { color: 'bg-gray-500', text: 'Pendiente', icon: <FaClock /> },
-      en_gestion: { color: 'bg-blue-500', text: 'En Gestión', icon: <FaCog /> },
-      a_tratar: { color: 'bg-orange-500', text: 'A Tratar', icon: <FaExclamationTriangle /> },
-      cerrado: { color: 'bg-green-500', text: 'Cerrado', icon: <FaCheck /> }
-    };
+  const getEstadoBadge = (estado, subEstado = null) => {
+    if (estado === 'cerrado') {
+      // Rosa claro con texto rojo oscuro
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fce7f3', color: '#991b1b' }}>
+          Cerrado
+        </span>
+      );
+    }
     
-    const badge = badges[estado] || badges.pendiente;
+    if (estado === 'aceptado') {
+      // Verde claro con texto verde oscuro
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
+          Aceptado
+        </span>
+      );
+    }
+    
+    if (estado === 'abierto') {
+      if (subEstado === 'en_espera') {
+        // Amarillo dorado con texto marrón/negro oscuro
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fde047', color: '#713f12' }}>
+            Abierto (En espera)
+          </span>
+        );
+      }
+      
+      if (subEstado === 'pendiente') {
+        // Rojo-naranja con texto rojo oscuro
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+            Abierto (Pendiente)
+          </span>
+        );
+      }
+      
+      // Si no tiene subEstado, mostrar como pendiente por defecto
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+          Abierto (Pendiente)
+        </span>
+      );
+    }
+    
+    // Estado por defecto
     return (
-      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-white text-sm font-medium ${badge.color}`}>
-        {badge.icon}
-        {badge.text}
+      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+        Abierto (Pendiente)
       </span>
     );
   };
@@ -212,7 +273,7 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <div>
             <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-              <FaComment className="text-primary" />
+              <FaEye className="text-primary" />
               Gestión de Oportunidad
             </h2>
             <p className="text-sm text-gray-400 mt-1">
@@ -231,9 +292,10 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
         <div className="flex border-b border-gray-700">
           {[
             { id: 'info', label: 'Información', icon: <FaEye /> },
-            { id: 'estado', label: 'Estado', icon: <FaCog /> },
+            { id: 'estado', label: 'Estado Oportunidad', icon: <FaCog /> },
             { id: 'alarma', label: 'Alarma', icon: <FaBell /> },
-            { id: 'comentarios', label: 'Comentarios', icon: <FaComment /> }
+            { id: 'comentarios', label: 'Comentarios', icon: <FaComment /> },
+            { id: 'historial', label: 'Historial', icon: <FaHistory /> }
           ].map(tab => (
             <button
               key={tab.id}
@@ -261,51 +323,120 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
           {/* Tab: Información */}
           {activeTab === 'info' && ingreso && (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <span className="text-gray-400 text-sm">Cliente:</span>
-                  <p className="text-white font-medium">{ingreso.CLIENTE || '-'}</p>
+              {/* Estado Oportunidad */}
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-white mb-3">Estado Oportunidad Actual</h3>
+                <div className="flex items-center gap-2">
+                  {getEstadoBadge(oportunidad?.estado || 'abierto', oportunidad?.subEstado)}
                 </div>
-                <div>
-                  <span className="text-gray-400 text-sm">Matrícula:</span>
-                  <p className="text-white font-medium">{ingreso['Matrícula vehí'] || '-'}</p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-sm">Modelo:</span>
-                  <p className="text-white font-medium">{ingreso.Modelo || '-'}</p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-sm">Taller:</span>
-                  <p className="text-white font-medium">{ingreso['Nombre taller'] || '-'}</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <span className="text-gray-400 text-sm">Fecha Cierre:</span>
-                  <p className="text-white font-medium">
-                    {ingreso['F cierr'] ? format(new Date(ingreso['F cierr']), 'dd/MM/yyyy', { locale: es }) : '-'}
+                {oportunidad?.alarma?.activa && (
+                  <p className="text-gray-400 text-sm mt-3">
+                    Alarma: {formatTimestamp(oportunidad.alarma.fechaHora)}
                   </p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-sm">Teléfono:</span>
-                  <p className="text-white font-medium">{ingreso.Teléfono || '-'}</p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-sm">E-mail:</span>
-                  <p className="text-white font-medium">{ingreso['E-mail'] || '-'}</p>
-                </div>
-                <div>
-                  <span className="text-gray-400 text-sm">Estado Actual:</span>
-                  <div className="mt-1">
-                    {getEstadoBadge(oportunidad?.estado || 'pendiente')}
-                  </div>
+                )}
+              </div>
+
+              {/* Información del Cliente */}
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                  <FaUser className="text-primary" />
+                  Información del Cliente
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {ingreso.CLIENTE && (
+                    <div>
+                      <span className="text-gray-400 text-sm">Cliente:</span>
+                      <p className="text-white font-medium">{ingreso.CLIENTE}</p>
+                    </div>
+                  )}
+                  {ingreso.Teléfono && (
+                    <div>
+                      <span className="text-gray-400 text-sm flex items-center gap-1">
+                        <FaPhone className="text-xs" />
+                        Teléfono:
+                      </span>
+                      <p className="text-white font-medium">{ingreso.Teléfono}</p>
+                    </div>
+                  )}
+                  {ingreso['E-mail'] && (
+                    <div>
+                      <span className="text-gray-400 text-sm flex items-center gap-1">
+                        <FaEnvelope className="text-xs" />
+                        E-mail:
+                      </span>
+                      <p className="text-white font-medium">{ingreso['E-mail']}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <span className="text-gray-400 text-sm">Desaveria:</span>
-                <p className="text-white mt-1">{ingreso.Desaveria || '-'}</p>
+              {/* Información del Vehículo */}
+              {(ingreso['Matrícula vehí'] || ingreso.Modelo) && (
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <FaCar className="text-primary" />
+                    Información del Vehículo
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {ingreso['Matrícula vehí'] && (
+                      <div>
+                        <span className="text-gray-400 text-sm">Matrícula/Patente:</span>
+                        <p className="text-white font-medium">{ingreso['Matrícula vehí']}</p>
+                      </div>
+                    )}
+                    {ingreso.Modelo && (
+                      <div>
+                        <span className="text-gray-400 text-sm">Modelo:</span>
+                        <p className="text-white font-medium">{ingreso.Modelo}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Información del Taller */}
+              {ingreso['Nombre taller'] && (
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <FaBuilding className="text-primary" />
+                    Información del Taller
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {ingreso['Nombre taller'] && (
+                      <div>
+                        <span className="text-gray-400 text-sm">Taller:</span>
+                        <p className="text-white font-medium">{ingreso['Nombre taller']}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Información Adicional */}
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-white mb-4">Información Adicional</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {ingreso['F cierr'] && (
+                    <div>
+                      <span className="text-gray-400 text-sm">Fecha Cierre:</span>
+                      <p className="text-white font-medium">
+                        {format(new Date(ingreso['F cierr']), 'dd/MM/yyyy', { locale: es })}
+                      </p>
+                    </div>
+                  )}
+                  {ingreso.Desaveria && (
+                    <div>
+                      <span className="text-gray-400 text-sm">Desaveria:</span>
+                      <p className="text-white font-medium text-sm">{ingreso.Desaveria}</p>
+                    </div>
+                  )}
+                  {ingreso.Referencia && (
+                    <div>
+                      <span className="text-gray-400 text-sm">Referencia:</span>
+                      <p className="text-white font-medium">{ingreso.Referencia}</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -313,34 +444,58 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
           {/* Tab: Estado */}
           {activeTab === 'estado' && (
             <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">Estado Actual</h3>
-                <div className="mb-4">
-                  {getEstadoBadge(oportunidad?.estado || 'pendiente')}
+              <div className="mb-6">
+                <h3 className="text-lg font-medium text-white mb-4">Estado Oportunidad Actual</h3>
+                <div className="flex items-center gap-2">
+                  {getEstadoBadge(oportunidad?.estado || 'abierto', oportunidad?.subEstado)}
                 </div>
               </div>
 
               <form onSubmit={handleCambioEstado} className="space-y-4">
-                <h3 className="text-lg font-medium text-white">Cambiar Estado</h3>
+                <h3 className="text-lg font-medium text-white">Cambiar Estado Oportunidad</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Nuevo Estado *
+                      Nuevo Estado Oportunidad *
                     </label>
                     <select
                       value={cambioEstado.estado}
-                      onChange={(e) => setCambioEstado(prev => ({ ...prev, estado: e.target.value }))}
+                      onChange={(e) => {
+                        const nuevoEstado = e.target.value;
+                        setCambioEstado(prev => ({ 
+                          ...prev, 
+                          estado: nuevoEstado,
+                          subEstado: nuevoEstado === 'abierto' ? prev.subEstado || 'pendiente' : ''
+                        }));
+                      }}
                       className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
                       disabled={saving}
                     >
                       <option value="">Seleccionar estado</option>
-                      <option value="pendiente">Pendiente</option>
-                      <option value="en_gestion">En Gestión</option>
-                      <option value="a_tratar">A Tratar</option>
                       <option value="cerrado">Cerrado</option>
+                      <option value="aceptado">Aceptado</option>
+                      <option value="abierto">Abierto</option>
                     </select>
                   </div>
+
+                  {cambioEstado.estado === 'abierto' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        SubEstado Oportunidad *
+                      </label>
+                      <select
+                        value={cambioEstado.subEstado}
+                        onChange={(e) => setCambioEstado(prev => ({ ...prev, subEstado: e.target.value }))}
+                        className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                        disabled={saving}
+                      >
+                        <option value="">Seleccionar subEstado</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="en_espera">En espera</option>
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -360,13 +515,13 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
                 {cambioEstado.estado === 'cerrado' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Motivo de Cierre *
+                      Comentario de Cierre *
                     </label>
                     <textarea
-                      value={cambioEstado.motivo}
-                      onChange={(e) => setCambioEstado(prev => ({ ...prev, motivo: e.target.value }))}
-                      placeholder="Describe el motivo del cierre..."
-                      rows={3}
+                      value={cambioEstado.comentario}
+                      onChange={(e) => setCambioEstado(prev => ({ ...prev, comentario: e.target.value }))}
+                      placeholder="Ingrese el motivo o comentario para cerrar la oportunidad..."
+                      rows={4}
                       className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
                       disabled={saving}
                     />
@@ -375,7 +530,7 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
 
                 <button
                   type="submit"
-                  disabled={saving || !cambioEstado.estado || !cambioEstado.usuario}
+                  disabled={saving || !cambioEstado.estado || !cambioEstado.usuario || (cambioEstado.estado === 'abierto' && !cambioEstado.subEstado) || (cambioEstado.estado === 'cerrado' && !cambioEstado.comentario?.trim())}
                   className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {saving ? (
@@ -428,7 +583,6 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
                       type="datetime-local"
                       value={alarma.fechaHora}
                       onChange={(e) => setAlarma(prev => ({ ...prev, fechaHora: e.target.value }))}
-                      min={new Date().toISOString().slice(0, 16)}
                       className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
                       disabled={saving}
                     />
@@ -475,16 +629,20 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
             <div className="space-y-6">
               {/* Lista de comentarios */}
               <div>
-                <h3 className="text-lg font-medium text-white mb-4">Comentarios ({comentarios.length})</h3>
+                <h3 className="text-lg font-medium text-white mb-4">Comentarios</h3>
                 
                 {comentarios.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FaComment className="text-gray-600 text-4xl mx-auto mb-4" />
-                    <p className="text-gray-400">No hay comentarios registrados</p>
-                  </div>
+                  <p className="text-gray-400 text-center py-8">No hay comentarios aún</p>
                 ) : (
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {comentarios.map((comentario, index) => (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {[...comentarios]
+                      .sort((a, b) => {
+                        // Ordenar del más nuevo al más antiguo
+                        const fechaA = new Date(a.timestamp || a.createdAt || 0);
+                        const fechaB = new Date(b.timestamp || b.createdAt || 0);
+                        return fechaB - fechaA; // Orden descendente (más nuevo primero)
+                      })
+                      .map((comentario, index) => (
                       <div key={index} className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -501,7 +659,7 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
                             <span>{formatTimestamp(comentario.timestamp)}</span>
                           </div>
                         </div>
-                        <p className="text-gray-300 whitespace-pre-wrap">{comentario.comentario}</p>
+                        <p className="text-gray-300 text-sm whitespace-pre-wrap">{comentario.comentario}</p>
                       </div>
                     ))}
                   </div>
@@ -509,7 +667,7 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
               </div>
 
               {/* Formulario de nuevo comentario */}
-              <form onSubmit={handleSubmitComentario} className="space-y-4">
+              <form onSubmit={handleSubmitComentario} className="space-y-4 border-t border-gray-700 pt-6">
                 <h3 className="text-lg font-medium text-white flex items-center gap-2">
                   <FaPlus className="text-primary" />
                   Agregar Comentario
@@ -565,6 +723,67 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
               </form>
             </div>
           )}
+
+          {activeTab === 'historial' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-medium text-white mb-4">Historial Completo</h3>
+              {oportunidad?.logs && oportunidad.logs.length > 0 ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {[...oportunidad.logs]
+                    .sort((a, b) => {
+                      // Ordenar del más nuevo al más antiguo
+                      const fechaA = new Date(a.timestamp || a.createdAt || 0);
+                      const fechaB = new Date(b.timestamp || b.createdAt || 0);
+                      return fechaB - fechaA; // Orden descendente (más nuevo primero)
+                    })
+                    .map((log, index) => (
+                    <div key={index} className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <FaUser className="text-primary text-sm" />
+                          <span className="font-medium text-white">{log.usuario}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-gray-400 text-sm">
+                          <FaClock />
+                          <span>{formatTimestamp(log.timestamp)}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="mb-2">
+                        <span className="text-gray-400 text-sm">Acción: </span>
+                        <span className="text-white text-sm font-medium">{log.accion}</span>
+                      </div>
+                      
+                      {(log.estadoAnterior || log.estadoNuevo) && (
+                        <div className="flex items-center gap-2 mb-2">
+                          {log.estadoAnterior && (
+                            <>
+                              <span className="text-gray-400 text-sm">Estado Oportunidad:</span>
+                              {getEstadoBadge(log.estadoAnterior, log.subEstadoAnterior)}
+                            </>
+                          )}
+                          {log.estadoAnterior && log.estadoNuevo && (
+                            <span className="text-gray-400 mx-2">→</span>
+                          )}
+                          {log.estadoNuevo && (
+                            <>
+                              {getEstadoBadge(log.estadoNuevo, log.subEstadoNuevo)}
+                            </>
+                          )}
+                        </div>
+                      )}
+                      
+                      {log.comentario && (
+                        <p className="text-gray-300 mt-2 text-sm whitespace-pre-wrap">{log.comentario}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-center py-8">No hay historial disponible</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -572,6 +791,31 @@ const OportunidadModal = ({ referencia, onClose, onUpdate }) => {
 };
 
 export default OportunidadModal;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

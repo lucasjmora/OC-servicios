@@ -8,7 +8,7 @@ const comentarioSchema = new mongoose.Schema({
   },
   tipo: {
     type: String,
-    enum: ['cita', 'oportunidad'],
+    enum: ['cita', 'oportunidad', 'boleto'],
     required: true
   },
   usuario: {

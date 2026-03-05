@@ -24,6 +24,32 @@ COLLECTION_CONFIG=configuracion
 CITAS_FILE_PATH=
 INGRESOS_FILE_PATH=
 
+# Configuración de API de Boletos
+# URL del endpoint de boletos (opcional, tiene valor por defecto)
+BOLETOS_API_URL=https://boleto-services.opencars.com.ar/pat/booking
+# Personal Access Token para autenticación en la API de boletos (requerido)
+BOLETOS_PAT=tu_token_aqui
+
+# Configuración de BOT Analyzer
+# MongoDB URI para conectar a flowiseProd (base de datos de conversaciones del bot Martina)
+BOT_ANALYZER_MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/flowiseProd
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -5,6 +5,7 @@ import {
   executeManualImport, 
   testConnection,
   getImportStatus,
+  getImportProgress,
   getLastSuccessfulImport 
 } from '../services/api';
 import PageHeader from '../components/PageHeader';
@@ -25,7 +26,9 @@ const ConfigActualizacion = () => {
       database: 'oc_servicios',
       collections: {
         citas: 'citas',
-        ingresos: 'ingresos'
+        ingresos: 'ingresos',
+        unidadesParadas: 'unidades_paradas',
+        legales: 'legales'
       }
     },
     filePaths: {
@@ -107,6 +110,18 @@ const ConfigActualizacion = () => {
       if (response.data) {
         setLastImport(response.data.lastImport);
       }
+      
+      // Verificar si hay una importación en curso
+      try {
+        const progressResponse = await getImportProgress();
+        if (progressResponse.data?.data?.isRunning) {
+          setShowProgress(true);
+          console.log('Importación en curso detectada, mostrando componente de progreso');
+        }
+      } catch (progressError) {
+        // Ignorar errores al verificar progreso, es opcional
+        console.log('No se pudo verificar progreso:', progressError.message);
+      }
     } catch (error) {
       console.error('Error cargando estado de importación:', error);
       // No mostrar error para el estado de importación, es opcional
@@ -164,17 +179,44 @@ const ConfigActualizacion = () => {
       setMessage({ type: 'info', text: 'Iniciando importación optimizada... Esto puede tomar hasta 10 minutos.' });
       
       console.log('Iniciando importación manual...');
-      const response = await executeManualImport();
-      console.log('Respuesta de importación:', response);
       
-      if (response.data.status === 'success') {
+      // Ejecutar importación con manejo de errores mejorado
+      let response;
+      try {
+        response = await executeManualImport();
+        console.log('Respuesta de importación:', response);
+      } catch (importError) {
+        // Si hay un error de conexión o timeout, la importación puede seguir en el backend
+        // Solo mostrar el error pero no cerrar el componente de progreso
+        console.error('Error en petición de importación:', importError);
+        
+        if (importError.code === 'ECONNABORTED' || importError.message?.includes('timeout')) {
+          setMessage({ 
+            type: 'info', 
+            text: 'La importación se inició en el servidor. El progreso se mostrará a continuación. Esto puede tomar varios minutos.' 
+          });
+          // No cerrar el componente de progreso, dejar que muestre el estado
+          return;
+        }
+        throw importError; // Re-lanzar para manejo general
+      }
+      
+      if (response?.data?.status === 'success') {
         setMessage({ 
           type: 'success', 
           text: `Importación exitosa. Citas nuevas: ${response.data.citas?.nuevos || 0}, Ingresos nuevos: ${response.data.ingresos?.nuevos || 0}` 
         });
-        loadImportStatus();
+        await loadImportStatus();
+        setShowProgress(false);
+      } else if (response?.data?.status === 'in_progress') {
+        // La importación está en progreso, el componente de progreso lo manejará
+        setMessage({ 
+          type: 'info', 
+          text: 'Importación iniciada. El progreso se mostrará a continuación.' 
+        });
       } else {
-        setMessage({ type: 'error', text: `Error en importación: ${response.data.error}` });
+        setMessage({ type: 'error', text: `Error en importación: ${response?.data?.error || 'Error desconocido'}` });
+        setShowProgress(false);
       }
     } catch (error) {
       console.error('Error en importación manual:', error);
@@ -186,22 +228,39 @@ const ConfigActualizacion = () => {
         data: error.response?.data
       });
       
-      if (error.code === 'ECONNABORTED') {
+      // Manejar diferentes tipos de errores sin cerrar el frontend
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
         setMessage({ 
-          type: 'error', 
-          text: 'Timeout: La importación está tardando más de 10 minutos. Los archivos podrían ser muy grandes o hay problemas de conectividad. Intenta nuevamente.' 
+          type: 'info', 
+          text: 'La petición tardó demasiado. La importación puede estar ejecutándose en el servidor. Verifica el progreso más abajo.' 
         });
+        // No cerrar el componente de progreso, puede que la importación siga
       } else if (error.response?.status === 500) {
         setMessage({ 
           type: 'error', 
-          text: `Error del servidor: ${error.response?.data?.error || error.message}` 
+          text: `Error del servidor: ${error.response?.data?.error || error.message}. Verifica los logs del servidor.` 
         });
+        setShowProgress(false);
+      } else if (error.response?.status === 400) {
+        setMessage({ 
+          type: 'error', 
+          text: `Error de configuración: ${error.response?.data?.error || error.message}` 
+        });
+        setShowProgress(false);
+      } else if (!error.response) {
+        // Error de red
+        setMessage({ 
+          type: 'error', 
+          text: 'Error de conexión con el servidor. Verifica que el backend esté ejecutándose.' 
+        });
+        setShowProgress(false);
       } else {
         setMessage({ type: 'error', text: `Error: ${error.response?.data?.error || error.message}` });
+        setShowProgress(false);
       }
     } finally {
       setImporting(false);
-      setTimeout(() => setMessage(null), 10000);
+      // El mensaje se mantendrá visible para mostrar el progreso
     }
   };
 
@@ -305,6 +364,42 @@ const ConfigActualizacion = () => {
                   mongodb: { 
                     ...config.mongodb, 
                     collections: { ...config.mongodb.collections, ingresos: e.target.value }
+                  }
+                })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Colección Unidades Paradas
+              </label>
+              <input
+                type="text"
+                value={config.mongodb?.collections?.unidadesParadas || ''}
+                onChange={(e) => setConfig({
+                  ...config,
+                  mongodb: { 
+                    ...config.mongodb, 
+                    collections: { ...config.mongodb.collections, unidadesParadas: e.target.value }
+                  }
+                })}
+                className="w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Colección Legales
+              </label>
+              <input
+                type="text"
+                value={config.mongodb?.collections?.legales || ''}
+                onChange={(e) => setConfig({
+                  ...config,
+                  mongodb: { 
+                    ...config.mongodb, 
+                    collections: { ...config.mongodb.collections, legales: e.target.value }
                   }
                 })}
                 className="w-full"
@@ -437,7 +532,7 @@ const ConfigActualizacion = () => {
             Última Importación
           </h3>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className={`grid gap-4 ${lastImport.summary?.ventasProcesadas && !lastImport.summary.ventasProcesadas.error ? 'grid-cols-2 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-4'}`}>
             <div>
               <p className="text-gray-400 text-sm">Fecha y Hora</p>
               <p className="text-white mt-1">
@@ -475,12 +570,25 @@ const ConfigActualizacion = () => {
                 {lastImport.summary?.totalRegistros || 0}
               </p>
             </div>
+            
+            {lastImport.summary?.ventasProcesadas && (
+              <div>
+                <p className="text-gray-400 text-sm">Ventas Procesadas</p>
+                <p className="text-white mt-1">
+                  {lastImport.summary.ventasProcesadas.error ? (
+                    <span className="text-red-400">Error</span>
+                  ) : (
+                    `${lastImport.summary.ventasProcesadas.mesesProcesados || 0} meses`
+                  )}
+                </p>
+              </div>
+            )}
           </div>
 
           {lastImport.summary && (
             <div className="mt-4 pt-4 border-t border-gray-700">
               <h4 className="text-sm font-medium text-gray-300 mb-3">Estadísticas Detalladas</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-primary">{lastImport.summary.citasNuevas || 0}</p>
                   <p className="text-gray-400">Citas nuevas</p>
@@ -496,6 +604,14 @@ const ConfigActualizacion = () => {
                 <div className="text-center">
                   <p className="text-2xl font-bold text-primary">{lastImport.summary.ingresosActualizados || 0}</p>
                   <p className="text-gray-400">Ingresos actualizados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-primary">{lastImport.summary.boletosNuevos || 0}</p>
+                  <p className="text-gray-400">Boletos nuevos</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-primary">{lastImport.summary.boletosActualizados || 0}</p>
+                  <p className="text-gray-400">Boletos actualizados</p>
                 </div>
               </div>
 
@@ -513,6 +629,30 @@ const ConfigActualizacion = () => {
                       <p className="text-gray-400">No asistieron</p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Estadísticas de ventas procesadas */}
+              {lastImport.summary.ventasProcesadas && (
+                <div className="mt-4 pt-4 border-t border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-300 mb-3">Procesamiento de Ventas</h4>
+                  {lastImport.summary.ventasProcesadas.error ? (
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-red-400">Error</p>
+                      <p className="text-gray-400 text-sm mt-1">{lastImport.summary.ventasProcesadas.error}</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-green-400">{lastImport.summary.ventasProcesadas.mesesProcesados || 0}</p>
+                        <p className="text-gray-400">Meses procesados</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-yellow-400">{lastImport.summary.ventasProcesadas.errores || 0}</p>
+                        <p className="text-gray-400">Errores</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -564,7 +704,7 @@ const ConfigActualizacion = () => {
           {lastSuccessfulImport.citas && lastSuccessfulImport.ingresos && (
             <div className="mt-4 pt-4 border-t border-gray-700">
               <h4 className="text-sm font-medium text-gray-300 mb-3">Estadísticas de la Importación</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-primary">{lastSuccessfulImport.citas.nuevos || 0}</p>
                   <p className="text-gray-400">Citas nuevas</p>
@@ -580,6 +720,14 @@ const ConfigActualizacion = () => {
                 <div className="text-center">
                   <p className="text-2xl font-bold text-primary">{lastSuccessfulImport.ingresos.actualizados || 0}</p>
                   <p className="text-gray-400">Ingresos actualizados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-primary">{lastSuccessfulImport.boletos?.nuevos || 0}</p>
+                  <p className="text-gray-400">Boletos nuevos</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-primary">{lastSuccessfulImport.boletos?.actualizados || 0}</p>
+                  <p className="text-gray-400">Boletos actualizados</p>
                 </div>
               </div>
 

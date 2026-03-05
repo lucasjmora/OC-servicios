@@ -1,6 +1,6 @@
 {
   "mongodb": {
-    "uri": "mongodb+srv://usuario:password@cluster.mongodb.net/oc_servicios?retryWrites=true&w=majority",
+    "uri": "mongodb+srv://lucasjmora:rUAhjnEbxWJXv9nY@lm-mongodb.mw28zss.mongodb.net/oc_servicios?retryWrites=true&w=majority",
     "database": "oc_servicios",
     "collections": {
       "citas": "citas",
@@ -8,8 +8,8 @@
     }
   },
   "filePaths": {
-    "citas": "ruta/ejemplo/citas.xlsx",
-    "ingresos": "ruta/ejemplo/ingresos.xlsx"
+    "citas": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx",
+    "ingresos": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx"
   },
   "scheduler": {
     "enabled": false,
@@ -20,19 +20,35 @@
   "mappings": {
     "talleres": {
       "1": "GV PE",
-      "2": "",
-      "15": "",
-      "17": "",
+      "2": "GV JU",
+      "9": "GV SN",
+      "10": "GV SN",
+      "15": "GV CO",
+      "17": "GV TR",
+      "41": "FC PE ",
+      "42": "FC JU",
+      "43": "FC SN",
+      "44": "FC CH",
+      "45": "FC 9J",
       "51": "PW GP",
       "52": "PW SR",
-      "141": ""
+      "141": "GV PM",
+      "155": "GV CO",
+      "177": "GV TR",
+      "414": "FC CS",
+      "415": "FC OL",
+      "416": "FC TL",
+      "1441": "GV PM"
     },
     "usuarios": {
       "userQIS-octupus": "Martina"
     },
     "campos": {
       "Desaveria": "Motivo",
-      "Matrícula vehí": "Patente"
+      "Matrícula vehí": "Patente",
+      "Tipo O": "Tipo de orden",
+      "F cierr": "Fecha cierre",
+      "FMatric": "Fecha Pat."
     }
   },
   "asistencia": {
@@ -41,10 +57,66 @@
   "lastImport": null,
   "createdAt": "2025-10-11T03:30:40.776Z",
   "updatedAt": "2025-10-11T03:30:40.776Z",
-  "lastUpdated": "2025-10-18T23:08:20.484Z",
+  "lastUpdated": "2026-03-02T14:01:00.697Z",
   "version": "1.0.0",
   "oportunidades": {
     "palabrasClave": "serv",
-    "mesesDesdeCierre": 4
+    "mesesDesdeCierre": 6
+  },
+  "accesorios": {
+    "diasEspera": 2,
+    "ciudadEmpresa": {
+      "9 de Julio": "9J",
+      "9 de Julio o Chivilcoy": "CH",
+      "Chivilcoy": "CH",
+      "Comodoro Rivadavia": "CO",
+      "Coronel Suarez": "CS",
+      "Coronel Suárez": "CS",
+      "General Pico": "GP",
+      "Junín": "JU",
+      "Olavarría": "OL",
+      "Pergamino": "PE",
+      "Puerto Madryn": "PM",
+      "Red": "RED",
+      "San Nicolás": "SN",
+      "San Nicolás de los Arroyos": "SN",
+      "Santa Rosa": "SR",
+      "Trelew": "TR",
+      "Trelew o Puerto Madryn": "PM",
+      "Trenque Lauquen": "TL"
+    },
+    "marcaEmpresa": {
+      "CHEVROLET": "FC",
+      "CITROEN": "GV",
+      "CITROËN": "GV",
+      "Chevrolet": "FC",
+      "Citroën": "GV",
+      "PEUGEOT": "GV",
+      "Peugeot": "GV",
+      "VOLKSWAGEN": "PW"
+    },
+    "ciudadMarcaEmpresa": {
+      "Junín|CHEVROLET": "FC JU",
+      "Junín|PEUGEOT": "GV JU",
+      "9 de Julio|CHEVROLET": "FC 9J",
+      "9 de Julio o Chivilcoy|CHEVROLET": "FC CH",
+      "Comodoro Rivadavia|PEUGEOT": "GV CO",
+      "Comodoro Rivadavia|CITROEN": "GV CO",
+      "Coronel Suarez|CHEVROLET": "FC CS",
+      "General Pico|VOLKSWAGEN": "PW GP",
+      "Santa Rosa|VOLKSWAGEN": "PW SR",
+      "Trelew|CITROEN": "GV TW",
+      "San Nicolás de los Arroyos|CHEVROLET": "FC SN",
+      "Trenque Lauquen|CHEVROLET": "FC TL",
+      "Junín|CITROËN": "GV JU",
+      "Pergamino|CHEVROLET": "FC PE",
+      "Olavarría|CHEVROLET": "FC OL",
+      "San Nicolás de los Arroyos|CITROËN": "GV SN",
+      "Trelew|PEUGEOT": "GV TW",
+      "Comodoro Rivadavia|CITROËN": "GV CO",
+      "Chivilcoy|CHEVROLET": "FC CH",
+      "Pergamino|PEUGEOT": "GV PE",
+      "San Nicolás de los Arroyos|PEUGEOT": "GV SN"
+    }
   }
 }

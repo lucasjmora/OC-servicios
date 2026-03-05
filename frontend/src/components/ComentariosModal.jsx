@@ -20,6 +20,7 @@ const ComentariosModal = ({ cita, onClose }) => {
     }
   }, [cita]);
 
+
   const loadComentarios = async () => {
     try {
       setLoading(true);
@@ -83,6 +84,7 @@ const ComentariosModal = ({ cita, onClose }) => {
     setError(''); // Limpiar error al cambiar
   };
 
+
   const formatTimestamp = (timestamp) => {
     try {
       return format(new Date(timestamp), 'dd/MM/yyyy HH:mm', { locale: es });
@@ -140,6 +142,7 @@ const ComentariosModal = ({ cita, onClose }) => {
               </div>
             </div>
           </div>
+
 
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Lista de comentarios */}
@@ -250,6 +253,7 @@ const ComentariosModal = ({ cita, onClose }) => {
           </div>
         </div>
       </div>
+
     </div>
   );
 };

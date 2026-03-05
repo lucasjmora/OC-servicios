@@ -5,3 +5,6 @@ node_modules/
 *.xlsx
 *.xls
 temp/
+
+# WhatsApp sessions
+data/whatsapp-sessions/

@@ -4,21 +4,27 @@
   "description": "Sistema de seguimiento de servicios de mantenimiento de talleres",
   "scripts": {
     "install-all": "cd backend && npm install && cd ../frontend && npm install",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev > ../logs/backend-dev.log 2>&1",
+    "dev:frontend": "cd frontend && npm run dev > ../logs/frontend-dev.out.log 2>../logs/frontend-dev.err.log",
     "start:backend": "cd backend && npm start",
     "start:frontend": "cd frontend && npm run dev",
-    "build:frontend": "cd frontend && npm run build"
+    "build:frontend": "cd frontend && npm run build",
+    "preview:frontend": "cd frontend && npm run preview",
+    "start:prod": "concurrently -n backend,frontend -c blue,green \"npm run start:backend\" \"npm run preview:frontend\"",
+    "start:prod:single": "npm run start:backend"
   },
-  "keywords": ["servicios", "talleres", "mantenimiento", "mongodb", "react"],
+  "keywords": [
+    "servicios",
+    "talleres",
+    "mantenimiento",
+    "mongodb",
+    "react"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "playwright": "^1.58.2"
   }
 }
-
-
-
-

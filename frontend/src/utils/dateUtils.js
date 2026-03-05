@@ -2,24 +2,51 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 /**
- * Formatea una fecha de forma segura, manejando valores inválidos
+ * Parsea fecha que puede venir como ISO (UTC) o string DD/MM/YYYY.
+ * Usa componentes UTC para fechas ISO para que el día mostrado coincida con el almacenado.
+ */
+function toLocalCalendarDate(date) {
+  if (!date) return null;
+  if (date instanceof Date && !isNaN(date.getTime())) {
+    return date;
+  }
+  const str = String(date).trim();
+  // Si es ISO (YYYY-MM-DD o con T), parsear y usar componentes UTC para evitar desfase por zona horaria
+  if (/^\d{4}-\d{2}-\d{2}(T|$)/.test(str)) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+  }
+  // Si es DD/MM/YYYY (formato español), parsear explícitamente para no interpretar como MM/DD/YYYY
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+    const [day, month, year] = str.split('/').map(Number);
+    const d = new Date(year, month - 1, day);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date(date);
+}
+
+/**
+ * Formatea una fecha de forma segura, manejando valores inválidos.
+ * Fechas ISO (UTC) se muestran con el día correcto usando componentes UTC.
  */
 export function safeFormatDate(date, formatString = 'dd/MM/yyyy', locale = es) {
   if (!date) return '-';
-  
+
   try {
-    const dateObj = new Date(date);
-    
-    // Verificar si la fecha es válida
-    if (isNaN(dateObj.getTime())) {
+    const dateObj = toLocalCalendarDate(date);
+
+    if (!dateObj || isNaN(dateObj.getTime())) {
       return 'Fecha inválida';
     }
-    
+
     return format(dateObj, formatString, { locale });
   } catch (error) {
     console.warn('Error formateando fecha:', error);
     try {
-      return new Date(date).toLocaleDateString('es-ES');
+      const fallback = toLocalCalendarDate(date);
+      return fallback && !isNaN(fallback.getTime()) ? format(fallback, formatString, { locale }) : 'Fecha inválida';
     } catch (fallbackError) {
       return 'Fecha inválida';
     }
@@ -124,4 +151,51 @@ export function isValidDate(date) {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * Calcula los días abiertos entre dos fechas
+ */
+export function calcularDiasAbiertos(fechaApertura, fechaCierre) {
+  if (!fechaApertura) return 0;
+  
+  try {
+    const inicio = new Date(fechaApertura);
+    const fin = fechaCierre ? new Date(fechaCierre) : new Date();
+    
+    if (isNaN(inicio.getTime()) || isNaN(fin.getTime())) {
+      return 0;
+    }
+    
+    const diffTime = Math.abs(fin - inicio);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays); // Asegurar que no sea negativo
+  } catch (error) {
+    console.warn('Error calculando días abiertos:', error);
+    return 0;
+  }
+}
+
+/**
+ * Obtiene el color del badge según los días abiertos
+ */
+export function getColorDias(dias) {
+  if (dias <= 7) return 'success';
+  if (dias <= 15) return 'warning';
+  if (dias <= 30) return 'orange';
+  return 'danger';
+}
+
+/**
+ * Obtiene la fecha/hora actual en formato datetime-local (hora local, no UTC)
+ * Para usar en el atributo min de inputs datetime-local
+ */
+export function getNowAsDateTimeLocal() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }

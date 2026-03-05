@@ -194,6 +194,21 @@ class ConfigStorageService {
   /**
    * Actualiza la configuración de oportunidades
    */
+  async updateAccesorios(accesorios) {
+    try {
+      this.config.accesorios = {
+        ...this.config.accesorios,
+        ...accesorios
+      };
+      this.config.lastUpdated = new Date().toISOString();
+      await this.saveConfig();
+      console.log('✅ Configuración de accesorios actualizada en almacenamiento local');
+    } catch (error) {
+      console.error('❌ Error actualizando configuración de accesorios:', error);
+      throw error;
+    }
+  }
+
   async updateOportunidades(oportunidades) {
     if (!this.isInitialized) {
       throw new Error('Servicio de configuración no inicializado');

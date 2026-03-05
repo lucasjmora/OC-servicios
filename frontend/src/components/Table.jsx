@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Table = ({ columns, data, loading = false }) => {
+const Table = ({ columns, data, loading = false, emptyMessage = "No se encontraron resultados", emptyIcon: EmptyIcon }) => {
   if (loading) {
     return (
       <div className="bg-background-card border border-gray-700 rounded-lg p-8 text-center">
@@ -13,7 +13,8 @@ const Table = ({ columns, data, loading = false }) => {
   if (!data || data.length === 0) {
     return (
       <div className="bg-background-card border border-gray-700 rounded-lg p-8 text-center">
-        <p className="text-gray-400">No se encontraron resultados</p>
+        {EmptyIcon && <EmptyIcon className="text-4xl mx-auto mb-2 opacity-50 text-gray-500" />}
+        <p className="text-gray-400">{emptyMessage}</p>
       </div>
     );
   }

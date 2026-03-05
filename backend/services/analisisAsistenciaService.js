@@ -12,6 +12,16 @@ export class AnalisisAsistenciaService {
     this.ingresosData = [];
   }
 
+  normalizarMatricula(matricula) {
+    if (!matricula) return '';
+
+    return matricula
+      .toString()
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  }
+
   /**
    * Analizar archivos Excel y calcular estados de asistencia
    */
@@ -72,16 +82,74 @@ export class AnalisisAsistenciaService {
       detalles: []
     };
 
+    const normalizarFecha = (fecha) => {
+      if (!fecha) return null;
+      const fechaDate = fecha instanceof Date ? new Date(fecha) : new Date(fecha);
+      if (isNaN(fechaDate.getTime())) {
+        return null;
+      }
+      return Date.UTC(
+        fechaDate.getUTCFullYear(),
+        fechaDate.getUTCMonth(),
+        fechaDate.getUTCDate()
+      );
+    };
+
+    const estaDentroDeTolerancia = (fechaCita, fechaIngreso) => {
+      const fechaCitaNormalizada = normalizarFecha(fechaCita);
+      const fechaIngresoNormalizada = normalizarFecha(fechaIngreso);
+
+      if (!fechaCitaNormalizada || !fechaIngresoNormalizada) {
+        return false;
+      }
+
+      const diffMs = fechaIngresoNormalizada - fechaCitaNormalizada;
+      if (diffMs < 0) {
+        return false;
+      }
+
+      const diffDias = diffMs / (1000 * 60 * 60 * 24);
+      return diffDias <= this.diasTolerancia;
+    };
+
     // Crear mapa de ingresos por matrícula para lookup rápido
     const ingresosMap = new Map();
     this.ingresosData.forEach(ingreso => {
-      const matricula = ingreso['Matrícula vehí'];
-      if (matricula && !ingresosMap.has(matricula)) {
-        ingresosMap.set(matricula, []);
+      const matriculaNormalizadaIngreso = this.normalizarMatricula(ingreso['Matrícula vehí']);
+      if (!matriculaNormalizadaIngreso) {
+        return;
       }
-      if (matricula) {
-        ingresosMap.get(matricula).push(ingreso);
+
+      const clavesAdicionales = [];
+
+      if (ingreso['Matrícula vehí']) {
+        const original = ingreso['Matrícula vehí'].toString().trim();
+        if (original) {
+          clavesAdicionales.push(original);
+        }
+        const alfanumerico = original.replace(/[^A-Za-z0-9]/g, '');
+        if (alfanumerico) {
+          clavesAdicionales.push(alfanumerico);
+        }
       }
+
+      const clavesNormalizadas = new Set([matriculaNormalizadaIngreso]);
+
+      clavesAdicionales
+        .filter(Boolean)
+        .forEach(clave => {
+          const normalizadaClave = this.normalizarMatricula(clave);
+          if (normalizadaClave) {
+            clavesNormalizadas.add(normalizadaClave);
+          }
+        });
+
+      clavesNormalizadas.forEach(clave => {
+        if (!ingresosMap.has(clave)) {
+          ingresosMap.set(clave, []);
+        }
+        ingresosMap.get(clave).push(ingreso);
+      });
     });
 
     console.log(`🗺️ Mapa de ingresos creado: ${ingresosMap.size} matrículas únicas`);
@@ -96,18 +164,17 @@ export class AnalisisAsistenciaService {
         let fechaIngreso = null;
 
         // Verificar si la matrícula existe en ingresos
-        if (cita.Matricula && ingresosMap.has(cita.Matricula)) {
+        const matriculaNormalizada = this.normalizarMatricula(cita.Matricula);
+
+        if (matriculaNormalizada && ingresosMap.has(matriculaNormalizada)) {
           const fechaCita = this.parsearFecha(cita['Fecha ci']);
           
           if (fechaCita) {
-            const fechaLimite = new Date(fechaCita);
-            fechaLimite.setDate(fechaLimite.getDate() + this.diasTolerancia);
-
             // Buscar ingreso dentro del rango de fechas
-            const ingresosCita = ingresosMap.get(cita.Matricula);
+            const ingresosCita = ingresosMap.get(matriculaNormalizada);
             const ingresoEncontrado = ingresosCita.find(ingreso => {
               const fechaIngresoObj = this.parsearFecha(ingreso.Fecaper);
-              return fechaIngresoObj && fechaIngresoObj >= fechaCita && fechaIngresoObj <= fechaLimite;
+              return estaDentroDeTolerancia(fechaCita, fechaIngresoObj);
             });
 
             if (ingresoEncontrado) {

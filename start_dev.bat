@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 title OC Servicios - Start Development Mode
 color 0A
 
@@ -8,89 +9,163 @@ echo    OC SERVICIOS - START DEV MODE
 echo ========================================
 echo.
 
-echo [1/6] Deteniendo instancias previas...
-echo Deteniendo procesos Node.js...
-taskkill /f /im node.exe > nul 2>&1
-if %errorlevel% equ 0 (
-    echo ✓ Procesos Node.js detenidos
-) else (
-    echo ℹ️  No hay procesos Node.js ejecutándose
+REM Verificar que estamos en el directorio correcto
+cd /d "%~dp0"
+if not exist "package.json" (
+    echo ❌ ERROR: No se encuentra package.json
+    echo    Asegúrate de ejecutar este script desde el directorio raíz del proyecto
+    pause
+    exit /b 1
 )
 
-echo Deteniendo ventanas de terminal...
-taskkill /f /im cmd.exe /fi "WINDOWTITLE eq OC Servicios*" > nul 2>&1
-echo ✓ Limpieza completada
-
-echo.
-echo [2/6] Configurando persistencia MongoDB...
-echo Configurando archivo .env para conexión automática...
-if not exist "backend\.env" (
-    echo MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/oc_servicios?retryWrites=true^&w=majority > backend\.env
-    echo ✓ Archivo .env creado con configuración persistente
-) else (
-    echo ✓ Archivo .env ya existe
-)
-
-echo Creando directorio de almacenamiento local...
-if not exist "backend\data" (
-    mkdir backend\data
-    echo ✓ Directorio de datos creado
-) else (
-    echo ✓ Directorio de datos ya existe
-)
-
-echo.
-echo [3/6] Verificando estructura del proyecto...
+echo [1/7] Verificando estructura del proyecto...
 if not exist "backend" (
     echo ❌ ERROR: No se encuentra la carpeta 'backend'
-    echo    Asegúrate de ejecutar este script desde el directorio raíz del proyecto
     pause
     exit /b 1
 )
 if not exist "frontend" (
     echo ❌ ERROR: No se encuentra la carpeta 'frontend'
-    echo    Asegúrate de ejecutar este script desde el directorio raíz del proyecto
     pause
     exit /b 1
 )
 echo ✓ Estructura del proyecto verificada
 
 echo.
-echo [4/6] Verificando package.json...
-if not exist "package.json" (
-    echo ❌ ERROR: No se encuentra package.json
-    echo    Este script debe ejecutarse desde el directorio raíz del proyecto
-    pause
-    exit /b 1
+echo [2/7] Deteniendo instancias previas...
+echo.
+
+REM Función mejorada para liberar puertos
+echo Liberando puerto 5000 (Backend)...
+:kill_port_5000
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":5000" ^| findstr "LISTENING"') do (
+    taskkill /f /pid %%a >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo   ✓ Proceso %%a terminado
+    )
 )
-echo ✓ package.json encontrado
+
+echo Liberando puerto 3000 (Frontend/Vite)...
+:kill_port_3000
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":3000" ^| findstr "LISTENING"') do (
+    taskkill /f /pid %%a >nul 2>&1
+    if !errorlevel! equ 0 (
+        echo   ✓ Proceso %%a terminado
+    )
+)
+
+REM Detener procesos Node.js relacionados
+echo Deteniendo procesos Node.js, npm y nodemon...
+taskkill /f /im node.exe >nul 2>&1
+taskkill /f /im npm.exe >nul 2>&1
+taskkill /f /im nodemon.exe >nul 2>&1
+
+echo Esperando 5 segundos para que los procesos se terminen completamente...
+timeout /t 5 /nobreak >nul
+
+REM Verificar nuevamente y liberar si es necesario
+netstat -ano 2>nul | findstr ":5000" | findstr "LISTENING" >nul
+if !errorlevel! equ 0 (
+    echo ⚠️  Puerto 5000 aún ocupado, liberando nuevamente...
+    goto kill_port_5000
+    timeout /t 2 /nobreak >nul
+)
+
+netstat -ano 2>nul | findstr ":3000" | findstr "LISTENING" >nul
+if !errorlevel! equ 0 (
+    echo ⚠️  Puerto 3000 aún ocupado, liberando nuevamente...
+    goto kill_port_3000
+    timeout /t 2 /nobreak >nul
+)
+
+echo ✓ Limpieza completa finalizada
 
 echo.
-echo [5/6] Instalando dependencias si es necesario...
+echo [3/7] Creando directorios necesarios...
+if not exist "backend\data" (
+    mkdir "backend\data" >nul 2>&1
+    echo ✓ Directorio backend\data creado
+) else (
+    echo ✓ Directorio backend\data ya existe
+)
+
+if not exist "logs" (
+    mkdir "logs" >nul 2>&1
+    echo ✓ Directorio logs creado
+) else (
+    echo ✓ Directorio logs ya existe
+)
+
+REM Crear archivos de log vacíos si no existen para evitar errores de redirección
+if not exist "logs\backend-dev.log" (
+    type nul > "logs\backend-dev.log"
+)
+if not exist "logs\frontend-dev.out.log" (
+    type nul > "logs\frontend-dev.out.log"
+)
+if not exist "logs\frontend-dev.err.log" (
+    type nul > "logs\frontend-dev.err.log"
+)
+
+echo.
+echo [4/7] Verificando dependencias del proyecto raíz...
 if not exist "node_modules" (
     echo Instalando dependencias del proyecto raíz...
-    npm install > nul 2>&1
+    call npm install
+    if errorlevel 1 (
+        echo ❌ ERROR: Falló la instalación de dependencias del proyecto raíz
+        pause
+        exit /b 1
+    )
     echo ✓ Dependencias del proyecto raíz instaladas
 ) else (
     echo ✓ Dependencias del proyecto raíz ya instaladas
 )
 
-echo Verificando dependencias del backend...
+REM Verificar que concurrently esté instalado
+if not exist "node_modules\concurrently" (
+    echo Instalando concurrently...
+    call npm install concurrently --save-dev
+    if errorlevel 1 (
+        echo ❌ ERROR: Falló la instalación de concurrently
+        pause
+        exit /b 1
+    )
+    echo ✓ concurrently instalado
+) else (
+    echo ✓ concurrently ya instalado
+)
+
+echo.
+echo [5/7] Verificando dependencias del backend...
 if not exist "backend\node_modules" (
     echo Instalando dependencias del backend...
     cd backend
-    npm install > nul 2>&1
+    call npm install
+    if errorlevel 1 (
+        echo ❌ ERROR: Falló la instalación de dependencias del backend
+        cd ..
+        pause
+        exit /b 1
+    )
     cd ..
     echo ✓ Dependencias del backend instaladas
 ) else (
     echo ✓ Dependencias del backend ya instaladas
 )
 
-echo Verificando dependencias del frontend...
+echo.
+echo [6/7] Verificando dependencias del frontend...
 if not exist "frontend\node_modules" (
     echo Instalando dependencias del frontend...
     cd frontend
-    npm install > nul 2>&1
+    call npm install
+    if errorlevel 1 (
+        echo ❌ ERROR: Falló la instalación de dependencias del frontend
+        cd ..
+        pause
+        exit /b 1
+    )
     cd ..
     echo ✓ Dependencias del frontend instaladas
 ) else (
@@ -98,11 +173,23 @@ if not exist "frontend\node_modules" (
 )
 
 echo.
-echo [6/6] Iniciando servidores en modo desarrollo...
+echo [7/7] Configuración MongoDB...
+if exist "backend\.env" (
+    echo ⚠️  Detectado backend\.env existente. La app leerá primero esos valores.
+    echo    Ajusta el archivo manualmente si prefieres administrar la conexión desde la UI.
+) else (
+    echo ℹ️  La configuración de MongoDB se gestiona desde la aplicación.
+    echo    Menú -^> Configuración -^> Actualización de datos.
+)
+
 echo.
-echo 🚀 Iniciando OC Servicios con configuración persistente...
+echo ========================================
+echo    INICIANDO SERVIDORES
+echo ========================================
+echo.
+echo 🚀 Iniciando OC Servicios...
 echo    Backend: http://localhost:5000
-echo    Frontend: http://localhost:5173
+echo    Frontend: http://localhost:3000 (Vite)
 echo.
 echo ✅ Configuración automática habilitada:
 echo    - Conexión MongoDB automática
@@ -110,46 +197,28 @@ echo    - Almacenamiento local de configuración
 echo    - Sincronización con base de datos
 echo    - Datos persistentes al reiniciar
 echo.
-echo ⚠️  IMPORTANTE: No cierres esta ventana ni la ventana que se abrirá
-echo    Para detener los servidores, presiona Ctrl+C en la ventana de OC Servicios
+echo 📝 Los logs se guardarán en la carpeta 'logs/':
+echo    - logs/backend-dev.log (Backend)
+echo    - logs/frontend-dev.out.log (Frontend stdout)
+echo    - logs/frontend-dev.err.log (Frontend stderr)
+echo.
+echo ⚠️  IMPORTANTE: Los servidores se ejecutarán en esta ventana
+echo    Para detener los servidores, presiona Ctrl+C
+echo.
+echo Esperando 2 segundos antes de iniciar...
+timeout /t 2 /nobreak >nul
 echo.
 
-start "OC Servicios - Development Mode" cmd /k "echo 🚀 OC Servicios - Modo Desarrollo && echo. && echo Backend: http://localhost:5000 && echo Frontend: http://localhost:5173 && echo. && echo Iniciando servidores... && npm run dev"
+REM Ejecutar npm run dev (esto bloqueará hasta Ctrl+C)
+call npm run dev
 
+REM Si llegamos aquí, significa que el usuario presionó Ctrl+C
 echo.
-echo ⏳ Esperando 8 segundos para que los servidores se inicien...
-timeout /t 8 /nobreak > nul
-
-echo.
-echo ✅ Servidores iniciados
-echo 🌐 Abriendo aplicación en el navegador...
-start http://localhost:5173
-
 echo.
 echo ========================================
-echo    APLICACION INICIADA EXITOSAMENTE
+echo    SERVIDORES DETENIDOS
 echo ========================================
 echo.
-echo 📱 URLs de acceso:
-echo    Frontend: http://localhost:5173
-echo    Backend:  http://localhost:5000
+echo Los servidores han sido detenidos.
 echo.
-echo 🔧 Configuración:
-echo    1. Ve a "Configuración" → "Actualización de datos"
-echo    2. ✅ MongoDB Atlas ya configurado automáticamente
-echo    3. ✅ Las rutas de archivos Excel se cargan automáticamente
-echo    4. Importa los datos cuando sea necesario
-echo.
-echo 🔍 Verificación:
-echo    - Ve a "Diagnóstico" para verificar el estado
-echo    - Ve a "Citas" para ver los datos
-echo    - Ve a "Ingresos Taller" para ver los datos
-echo.
-echo ⚠️  Para detener la aplicación:
-echo    - Presiona Ctrl+C en la ventana "OC Servicios - Development Mode"
-echo    - O ejecuta: taskkill /f /im node.exe
-echo.
-echo ✅ ¡Aplicación lista para usar!
-echo Presiona cualquier tecla para cerrar esta ventana...
-pause > nul
-
+pause

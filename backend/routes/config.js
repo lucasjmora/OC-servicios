@@ -497,6 +497,269 @@ router.put('/oportunidades', async (req, res) => {
   }
 });
 
+// Obtener configuración de accesorios
+router.get('/accesorios', async (req, res) => {
+  try {
+    // Conectar a MongoDB si no está conectado
+    const connected = await ensureMongoConnection();
+    if (!connected) {
+      return res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: 'No se pudo conectar a MongoDB'
+      });
+    }
+
+    const config = await Configuracion.findOne({ singleton: true });
+
+    res.json({
+      success: true,
+      data: {
+        diasEspera: config?.accesorios?.diasEspera || 7,
+        ciudadEmpresa: config?.accesorios?.ciudadEmpresa || {},
+        marcaEmpresa: config?.accesorios?.marcaEmpresa || {},
+        ciudadMarcaEmpresa: config?.accesorios?.ciudadMarcaEmpresa || {}
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo configuración de accesorios:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message
+    });
+  }
+});
+
+// Obtener configuración de ventas
+router.get('/ventas', async (req, res) => {
+  try {
+    // Conectar a MongoDB si no está conectado
+    await ensureMongoConnection();
+
+    const config = await Configuracion.findOne({ singleton: true });
+    
+    if (!config) {
+      return res.json({
+        success: true,
+        rutaCtasPV: '',
+        rutaBalances: ''
+      });
+    }
+
+    res.json({
+      success: true,
+      rutaCtasPV: config.ventas?.rutaCtasPV || '',
+      rutaBalances: config.ventas?.rutaBalances || ''
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo configuración de ventas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message
+    });
+  }
+});
+
+// Actualizar configuración de ventas
+router.put('/ventas', async (req, res) => {
+  try {
+    const { rutaCtasPV, rutaBalances } = req.body;
+
+    // Validaciones
+    if (rutaCtasPV === undefined || rutaCtasPV === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ruta de archivo Ctas_PV requerida'
+      });
+    }
+
+    if (rutaBalances === undefined || rutaBalances === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ruta de carpeta de balances requerida'
+      });
+    }
+
+    // Conectar a MongoDB si no está conectado
+    await ensureMongoConnection();
+
+    // Actualizar configuración
+    const config = await Configuracion.findOneAndUpdate(
+      { singleton: true },
+      {
+        $set: {
+          'ventas.rutaCtasPV': rutaCtasPV.trim(),
+          'ventas.rutaBalances': rutaBalances.trim(),
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Configuración de ventas actualizada exitosamente',
+      data: {
+        rutaCtasPV: config.ventas.rutaCtasPV,
+        rutaBalances: config.ventas.rutaBalances
+      }
+    });
+
+  } catch (error) {
+    console.error('Error actualizando configuración de ventas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message
+    });
+  }
+});
+
+// Actualizar configuración de accesorios
+router.put('/accesorios', async (req, res) => {
+  try {
+    const { diasEspera, ciudadEmpresa, marcaEmpresa, ciudadMarcaEmpresa } = req.body;
+
+    const updates = { updatedAt: new Date() };
+
+    if (diasEspera !== undefined && diasEspera !== null) {
+      if (!Number.isInteger(diasEspera) || diasEspera < 1 || diasEspera > 365) {
+        return res.status(400).json({
+          success: false,
+          error: 'Días de espera debe ser un número entero entre 1 y 365'
+        });
+      }
+      updates['accesorios.diasEspera'] = diasEspera;
+    }
+
+    if (ciudadEmpresa !== undefined) {
+      const valid = typeof ciudadEmpresa === 'object' && ciudadEmpresa !== null && !Array.isArray(ciudadEmpresa);
+      if (!valid) {
+        return res.status(400).json({
+          success: false,
+          error: 'ciudadEmpresa debe ser un objeto (ciudad -> texto empresa)'
+        });
+      }
+      const sanitized = {};
+      for (const [ciudad, emp] of Object.entries(ciudadEmpresa)) {
+        if (ciudad && typeof ciudad === 'string') {
+          const valor = String(emp).trim();
+          if (valor) sanitized[ciudad.trim()] = valor;
+        }
+      }
+      updates['accesorios.ciudadEmpresa'] = sanitized;
+    }
+
+    if (marcaEmpresa !== undefined) {
+      const valid = typeof marcaEmpresa === 'object' && marcaEmpresa !== null && !Array.isArray(marcaEmpresa);
+      if (!valid) {
+        return res.status(400).json({
+          success: false,
+          error: 'marcaEmpresa debe ser un objeto (marca -> texto empresa)'
+        });
+      }
+      const sanitized = {};
+      for (const [marca, emp] of Object.entries(marcaEmpresa)) {
+        if (marca && typeof marca === 'string') {
+          const valor = String(emp).trim();
+          if (valor) sanitized[marca.trim()] = valor;
+        }
+      }
+      updates['accesorios.marcaEmpresa'] = sanitized;
+    }
+
+    if (ciudadMarcaEmpresa !== undefined) {
+      const valid = typeof ciudadMarcaEmpresa === 'object' && ciudadMarcaEmpresa !== null && !Array.isArray(ciudadMarcaEmpresa);
+      if (!valid) {
+        return res.status(400).json({
+          success: false,
+          error: 'ciudadMarcaEmpresa debe ser un objeto ("Ciudad|Marca" -> texto empresa)'
+        });
+      }
+      const sanitized = {};
+      for (const [key, emp] of Object.entries(ciudadMarcaEmpresa)) {
+        if (key && typeof key === 'string') {
+          const k = String(key).trim();
+          const valor = String(emp).trim();
+          if (k && valor) sanitized[k] = valor;
+        }
+      }
+      updates['accesorios.ciudadMarcaEmpresa'] = sanitized;
+    }
+
+    if (Object.keys(updates).length <= 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere al menos diasEspera, ciudadEmpresa o marcaEmpresa'
+      });
+    }
+
+    const connected = await ensureMongoConnection();
+    if (!connected) {
+      return res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: 'No se pudo conectar a MongoDB'
+      });
+    }
+
+    const config = await Configuracion.findOneAndUpdate(
+      { singleton: true },
+      { $set: updates },
+      { upsert: true, new: true }
+    );
+
+    try {
+      if (configStorageService.isInitialized) {
+        const toUpdate = {};
+        if (updates['accesorios.diasEspera'] !== undefined) toUpdate.diasEspera = config.accesorios.diasEspera;
+        if (updates['accesorios.ciudadEmpresa'] !== undefined) toUpdate.ciudadEmpresa = config.accesorios.ciudadEmpresa || {};
+        if (updates['accesorios.marcaEmpresa'] !== undefined) toUpdate.marcaEmpresa = config.accesorios.marcaEmpresa || {};
+        if (updates['accesorios.ciudadMarcaEmpresa'] !== undefined) toUpdate.ciudadMarcaEmpresa = config.accesorios.ciudadMarcaEmpresa || {};
+        if (Object.keys(toUpdate).length) await configStorageService.updateAccesorios(toUpdate);
+        console.log('✅ Configuración de accesorios sincronizada con almacenamiento local');
+      }
+    } catch (localError) {
+      console.error('⚠️  Error sincronizando con almacenamiento local:', localError);
+    }
+
+    if (
+      updates['accesorios.ciudadEmpresa'] !== undefined ||
+      updates['accesorios.marcaEmpresa'] !== undefined ||
+      updates['accesorios.ciudadMarcaEmpresa'] !== undefined
+    ) {
+      try {
+        const { accesoriosStatsCache } = await import('./boletos.js');
+        if (accesoriosStatsCache?.clear) accesoriosStatsCache.clear();
+      } catch (_) {}
+    }
+
+    const data = {
+      diasEspera: config.accesorios.diasEspera,
+      ciudadEmpresa: config.accesorios.ciudadEmpresa || {},
+      marcaEmpresa: config.accesorios.marcaEmpresa || {},
+      ciudadMarcaEmpresa: config.accesorios.ciudadMarcaEmpresa || {}
+    };
+    res.json({
+      success: true,
+      message: 'Configuración de accesorios actualizada exitosamente',
+      data
+    });
+
+  } catch (error) {
+    console.error('Error actualizando configuración de accesorios:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      message: error.message
+    });
+  }
+});
+
 export default router;
 
 

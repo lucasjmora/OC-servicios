@@ -15,6 +15,17 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+# Development logs
+frontend-dev.out.log
+frontend-dev.err.log
+backend-dev.log
+backend.log
+frontend-dev.log
+
+# Logs directory (to avoid OneDrive sync)
+logs/
+!logs/.gitkeep
+
 # Runtime data
 pids
 *.pid

@@ -1,10 +1,8 @@
 import cron from 'node-cron';
 import { executeImport } from './importService.js';
-import { verificarAlarmas } from './alarmasService.js';
 import Configuracion from '../models/Configuracion.js';
 
 let scheduledTask = null;
-let alarmasTask = null;
 
 /**
  * Inicia el scheduler con la configuración actual
@@ -49,36 +47,9 @@ export async function startScheduler() {
     
     console.log(`Scheduler iniciado con expresión: ${cronExpression}`);
     
-    // Iniciar también el scheduler de alarmas (cada 5 minutos)
-    startAlarmasScheduler();
-    
   } catch (error) {
     console.error('Error iniciando scheduler:', error);
   }
-}
-
-/**
- * Inicia el scheduler de alarmas (cada 5 minutos)
- */
-export function startAlarmasScheduler() {
-  // Detener tarea existente si hay una
-  if (alarmasTask) {
-    alarmasTask.stop();
-  }
-  
-  // Crear nueva tarea para verificar alarmas cada 5 minutos
-  alarmasTask = cron.schedule('*/5 * * * *', async () => {
-    try {
-      const resultado = await verificarAlarmas();
-      if (resultado.procesadas > 0) {
-        console.log(`[SCHEDULER] ${resultado.procesadas} alarmas procesadas`);
-      }
-    } catch (error) {
-      console.error('[SCHEDULER] Error verificando alarmas:', error);
-    }
-  });
-  
-  console.log('Scheduler de alarmas iniciado (cada 5 minutos)');
 }
 
 /**
@@ -89,12 +60,6 @@ export function stopScheduler() {
     scheduledTask.stop();
     scheduledTask = null;
     console.log('Scheduler detenido');
-  }
-  
-  if (alarmasTask) {
-    alarmasTask.stop();
-    alarmasTask = null;
-    console.log('Scheduler de alarmas detenido');
   }
 }
 

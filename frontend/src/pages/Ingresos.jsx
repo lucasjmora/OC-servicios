@@ -1,37 +1,73 @@
 import { useEffect, useState } from 'react';
-import { getIngresos } from '../services/api';
+import * as XLSX from 'xlsx';
+import { getIngresos, getMappings, getUniqueValues } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
 import Pagination from '../components/Pagination';
 import Badge from '../components/Badge';
 import { safeFormatDate } from '../utils/dateUtils';
-import { FaSearch } from 'react-icons/fa';
+import { FaSearch, FaFileExcel } from 'react-icons/fa';
 import { useFieldMappings } from '../hooks/useFieldMappings';
 
-const Ingresos = () => {
+const DATE_KEYS = ['Fecaper', 'F cierr', 'FMatric', 'FEC OBS '];
+
+const Ingresos = ({ onlyEstadC = false }) => {
   const [ingresos, setIngresos] = useState([]);
   const [loading, setLoading] = useState(true);
   const { mapColumns } = useFieldMappings();
+  const [talleresMapping, setTalleresMapping] = useState({});
+  const [talleresList, setTalleresList] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
     total: 0,
     totalPages: 0
   });
-  
+
   const [filters, setFilters] = useState({
     search: '',
     taller: '',
-    estado: '',
+    estado: onlyEstadC ? 'C' : '',
     tipo: '',
     fechaDesde: '',
     fechaHasta: ''
   });
 
+  const [tipoList, setTipoList] = useState([]);
+  const [exporting, setExporting] = useState(false);
+
   useEffect(() => {
     loadIngresos();
-  }, [pagination.page, filters]);
+  }, [pagination.page, pagination.limit, filters]);
+
+  useEffect(() => {
+    loadTalleres();
+    loadTipos();
+  }, []);
+
+  const loadTalleres = async () => {
+    try {
+      const [mappingsRes, talleresRes] = await Promise.all([
+        getMappings('talleres'),
+        getUniqueValues('ingresos', 'Taller')
+      ]);
+
+      setTalleresMapping(mappingsRes.data || {});
+      setTalleresList((talleresRes.data || []).sort());
+    } catch (error) {
+      console.error('Error cargando talleres:', error);
+    }
+  };
+
+  const loadTipos = async () => {
+    try {
+      const tiposRes = await getUniqueValues('ingresos', 'Tipo O');
+      setTipoList((tiposRes.data || []).filter(Boolean).sort());
+    } catch (error) {
+      console.error('Error cargando tipos de orden:', error);
+    }
+  };
 
   const loadIngresos = async () => {
     try {
@@ -39,9 +75,12 @@ const Ingresos = () => {
       const params = {
         page: pagination.page,
         limit: pagination.limit,
-        ...filters
+        ...filters,
+        ...(onlyEstadC && { excludeTalleres: MKT_EXCLUDED_TALLERES.join(',') }),
+        ...(onlyEstadC && { tipoOPrefix: '1,2' }),
+        ...(onlyEstadC && { sortBy: 'F cierr' })
       };
-      
+
       const response = await getIngresos(params);
       
       setIngresos(response.data.data);
@@ -65,7 +104,7 @@ const Ingresos = () => {
     setFilters({
       search: '',
       taller: '',
-      estado: '',
+      estado: onlyEstadC ? 'C' : '',
       tipo: '',
       fechaDesde: '',
       fechaHasta: ''
@@ -81,6 +120,17 @@ const Ingresos = () => {
       minimumFractionDigits: 0
     }).format(value);
   };
+
+  // Talleres excluidos en vista Mkt (no se muestran en datos ni en el filtro)
+  const MKT_EXCLUDED_TALLERES = ['4', '18', '48', '5', '71'];
+
+  // Columnas que no se muestran en la vista Mkt (submenú dB)
+  const MKT_HIDDEN_COLUMN_KEYS = [
+    'Estad', 'Fecaper', 'Numero', 'Serie/num', 'Cta cargo', 'Recepcionista', 'Usuario Cita',
+    'BASE', 'Tiemfact', 'Mano obra', 'Total material', 'BENEFICIO', 'BENEFICIOS REC', 'SUBARRENDADO', 'BENEFSUB',
+    'Observaciones', 'OBSERVACIONES INTERNAS', 'FEC OBS ', 'HOR O', 'IDP NOMBRE',
+    'Opera', 'Bastidor', 'CLIENTE'
+  ];
 
   // Definir columnas con nombres originales de la base de datos
   const baseColumns = [
@@ -99,6 +149,11 @@ const Ingresos = () => {
     {
       header: 'F cierr',
       key: 'F cierr',
+      render: (value) => safeFormatDate(value)
+    },
+    {
+      header: 'FMatric',
+      key: 'FMatric',
       render: (value) => safeFormatDate(value)
     },
     {
@@ -304,14 +359,61 @@ const Ingresos = () => {
     }
   ];
 
-  // Aplicar mapeo de campos a las columnas
-  const columns = mapColumns(baseColumns);
+  // En vista Mkt ocultar columnas indicadas; aplicar mapeo de campos
+  const columnsToMap = onlyEstadC
+    ? baseColumns.filter((col) => !MKT_HIDDEN_COLUMN_KEYS.includes(col.key))
+    : baseColumns;
+  const columns = mapColumns(columnsToMap);
+
+  const handleExportExcel = async () => {
+    if (!onlyEstadC) return;
+    setExporting(true);
+    try {
+      const params = { ...filters, page: 1, limit: 10000, ...(onlyEstadC && { excludeTalleres: MKT_EXCLUDED_TALLERES.join(',') }), ...(onlyEstadC && { tipoOPrefix: '1,2' }), ...(onlyEstadC && { sortBy: 'F cierr' }) };
+      const response = await getIngresos(params);
+      const data = response.data?.data || [];
+      const headers = columns.map((col) => col.header);
+      const rows = data.map((row) => {
+        const obj = {};
+        columns.forEach((col) => {
+          let value = row[col.key];
+          if (DATE_KEYS.includes(col.key) && value) {
+            value = safeFormatDate(value) || value;
+          }
+          obj[col.header] = value !== undefined && value !== null ? value : '';
+        });
+        return obj;
+      });
+      const ws = rows.length > 0
+        ? XLSX.utils.json_to_sheet(rows)
+        : XLSX.utils.aoa_to_sheet([headers]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ingresos Mkt');
+      const fileName = `ingresos-mkt-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (err) {
+      console.error('Error exportando Excel:', err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="p-8">
       <PageHeader 
-        title="Ingresos Taller" 
-        subtitle={`${pagination.total} órdenes de reparación en total`}
+        title={onlyEstadC ? 'Pasos por taller' : 'Ingresos Taller'} 
+        subtitle={onlyEstadC ? `${pagination.total} órdenes cerradas` : `${pagination.total} órdenes de reparación en total`}
+        action={onlyEstadC && (
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
+          >
+            <FaFileExcel className="text-lg" />
+            {exporting ? 'Exportando...' : 'Exportar a Excel'}
+          </button>
+        )}
       />
 
       <Filters onClear={handleClearFilters}>
@@ -328,7 +430,7 @@ const Ingresos = () => {
           </div>
         </Filters.Item>
 
-        <Filters.Item label="Fecha desde">
+        <Filters.Item label="Fecha cierre desde">
           <input
             type="date"
             value={filters.fechaDesde}
@@ -337,7 +439,7 @@ const Ingresos = () => {
           />
         </Filters.Item>
 
-        <Filters.Item label="Fecha hasta">
+        <Filters.Item label="Fecha cierre hasta">
           <input
             type="date"
             value={filters.fechaHasta}
@@ -346,17 +448,54 @@ const Ingresos = () => {
           />
         </Filters.Item>
 
-        <Filters.Item label="Por página">
+        <Filters.Item label="Taller">
           <select
-            value={pagination.limit}
-            onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
+            value={filters.taller}
+            onChange={(e) => handleFilterChange('taller', e.target.value)}
             className="w-full"
           >
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
+            <option value="">Todos</option>
+            {onlyEstadC
+              ? (() => {
+                  const filtrados = talleresList.filter((t) => !MKT_EXCLUDED_TALLERES.includes(String(t)));
+                  const porNombre = {};
+                  filtrados.forEach((codigo) => {
+                    const nombre = talleresMapping[codigo] || `Taller ${codigo}`;
+                    if (!porNombre[nombre]) porNombre[nombre] = [];
+                    porNombre[nombre].push(codigo);
+                  });
+                  return Object.entries(porNombre)
+                    .map(([nombre, codigos]) => ({ nombre, value: codigos.join(',') }))
+                    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                    .map(({ nombre, value }) => (
+                      <option key={value} value={value}>
+                        {nombre}
+                      </option>
+                    ));
+                })()
+              : talleresList.map((codigo) => (
+                  <option key={codigo} value={codigo}>
+                    {talleresMapping[codigo] || `Taller ${codigo}`}
+                  </option>
+                ))}
           </select>
         </Filters.Item>
+
+        <Filters.Item label="Tipo de orden">
+          <select
+            value={filters.tipo}
+            onChange={(e) => handleFilterChange('tipo', e.target.value)}
+            className="w-full"
+          >
+            <option value="">Todos</option>
+            {(onlyEstadC ? tipoList.filter((t) => t && (String(t).startsWith('1') || String(t).startsWith('2'))) : tipoList).map((codigo) => (
+              <option key={codigo} value={codigo}>
+                {codigo}
+              </option>
+            ))}
+          </select>
+        </Filters.Item>
+
       </Filters>
 
       {/* Indicador de scroll horizontal */}

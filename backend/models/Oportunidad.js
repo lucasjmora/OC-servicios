@@ -15,11 +15,21 @@ const logSchema = new mongoose.Schema({
   },
   estadoAnterior: {
     type: String,
-    enum: ['pendiente', 'en_gestion', 'a_tratar', 'cerrado']
+    required: false
   },
   estadoNuevo: {
     type: String,
-    enum: ['pendiente', 'en_gestion', 'a_tratar', 'cerrado']
+    required: false
+  },
+  subEstadoAnterior: {
+    type: String,
+    enum: ['pendiente', 'en_espera'],
+    required: false
+  },
+  subEstadoNuevo: {
+    type: String,
+    enum: ['pendiente', 'en_espera'],
+    required: false
   },
   comentario: {
     type: String
@@ -35,8 +45,24 @@ const oportunidadSchema = new mongoose.Schema({
   },
   estado: {
     type: String,
-    enum: ['pendiente', 'en_gestion', 'a_tratar', 'cerrado'],
-    default: 'pendiente'
+    enum: ['cerrado', 'aceptado', 'abierto'],
+    default: 'abierto'
+  },
+  subEstado: {
+    type: String,
+    enum: ['pendiente', 'en_espera'],
+    default: 'pendiente',
+    validate: {
+      validator: function(value) {
+        // subEstado solo es válido si estado es 'abierto'
+        if (this.estado === 'abierto') {
+          return value === 'pendiente' || value === 'en_espera';
+        }
+        // Si estado no es 'abierto', subEstado debe ser null/undefined
+        return value === null || value === undefined;
+      },
+      message: 'subEstado solo es válido cuando estado es "abierto"'
+    }
   },
   alarma: {
     fechaHora: {
@@ -58,20 +84,38 @@ const oportunidadSchema = new mongoose.Schema({
 
 // Índices para búsquedas optimizadas
 oportunidadSchema.index({ ingresoReferencia: 1 });
-oportunidadSchema.index({ estado: 1 });
+oportunidadSchema.index({ estado: 1, subEstado: 1 });
 oportunidadSchema.index({ 'alarma.activa': 1, 'alarma.fechaHora': 1 });
 
-// Validación: motivoCierre requerido si estado es 'cerrado'
-oportunidadSchema.pre('save', function(next) {
-  if (this.estado === 'cerrado' && (!this.motivoCierre || this.motivoCierre.trim() === '')) {
-    return next(new Error('El motivo de cierre es obligatorio cuando el estado es "cerrado"'));
-  }
-  next();
-});
 
 const Oportunidad = mongoose.model('Oportunidad', oportunidadSchema);
 
 export default Oportunidad;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

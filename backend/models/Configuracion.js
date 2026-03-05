@@ -60,6 +60,20 @@ const configuracionSchema = new mongoose.Schema({
     mesesDesdeCierre: { type: Number, default: 3 } // Meses desde F cierr
   },
 
+  // Configuración de accesorios
+  accesorios: {
+    diasEspera: { type: Number, default: 7 }, // Días sin comentarios antes de cambiar de "en espera" a "pendiente"
+    ciudadEmpresa: { type: mongoose.Schema.Types.Mixed, default: {} }, // Mapeo ciudad -> texto empresa para dashboard
+    marcaEmpresa: { type: mongoose.Schema.Types.Mixed, default: {} },  // Mapeo marca -> texto empresa para dashboard
+    ciudadMarcaEmpresa: { type: mongoose.Schema.Types.Mixed, default: {} } // Mapeo "Ciudad|Marca" -> texto empresa para dashboard
+  },
+
+  // Configuración de ventas
+  ventas: {
+    rutaCtasPV: String, // Ruta al archivo Ctas_PV.xlsx
+    rutaBalances: String // Ruta a la carpeta con archivos balance mensuales
+  },
+
   // Log de última importación
   lastImport: {
     timestamp: Date,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getOportunidades, getConfigOportunidades } from '../services/api';
+import { getOportunidades, getConfigOportunidades, getMappings, getUniqueValues } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
@@ -14,6 +14,8 @@ import { Link } from 'react-router-dom';
 const Oportunidades = () => {
   const [oportunidades, setOportunidades] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [talleresMapping, setTalleresMapping] = useState({});
+  const [talleresAgrupados, setTalleresAgrupados] = useState([]);
   const [parametros, setParametros] = useState({
     palabrasClave: '',
     mesesDesdeCierre: 3
@@ -26,12 +28,39 @@ const Oportunidades = () => {
     totalPages: 0
   });
   
+  // Calcular fechas por defecto: igual que en el dashboard
+  // fechaLimite = hoy - mesesDesdeCierre
+  // fechaDesde = fechaLimite - 7 días
+  const getDefaultDates = (mesesDesdeCierre = 3) => {
+    const fechaLimite = new Date();
+    fechaLimite.setMonth(fechaLimite.getMonth() - mesesDesdeCierre);
+    fechaLimite.setHours(23, 59, 59, 999);
+    
+    const fechaDesde = new Date(fechaLimite);
+    fechaDesde.setDate(fechaDesde.getDate() - 7);
+    fechaDesde.setHours(0, 0, 0, 0);
+    
+    // Función auxiliar para convertir fecha local a formato YYYY-MM-DD sin cambiar zona horaria
+    const formatLocalDate = (date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+    
+    return {
+      fechaDesde: formatLocalDate(fechaDesde), // Formato YYYY-MM-DD en hora local
+      fechaHasta: formatLocalDate(fechaLimite) // Formato YYYY-MM-DD en hora local
+    };
+  };
+  
   const [filters, setFilters] = useState({
     search: '',
     taller: '',
     fechaDesde: '',
     fechaHasta: '',
-    estado: ''
+    estado: '',
+    subEstado: ''
   });
   
   const [selectedOportunidad, setSelectedOportunidad] = useState(null);
@@ -39,7 +68,52 @@ const Oportunidades = () => {
 
   useEffect(() => {
     loadConfigOportunidades();
+    loadTalleresMapping();
   }, []);
+
+  const loadTalleresMapping = async () => {
+    try {
+      const [mappingsRes, ingresosRes] = await Promise.all([
+        getMappings('talleres'),
+        getUniqueValues('ingresos', 'Taller')
+      ]);
+      
+      const mappings = mappingsRes.data || {};
+      setTalleresMapping(mappings);
+      
+      // Combinar códigos únicos de talleres
+      const allCodigos = new Set(ingresosRes.data);
+      
+      // Agrupar talleres por nombre mapeado
+      const agrupadosPorNombre = {};
+      Array.from(allCodigos).forEach(codigo => {
+        const nombre = mappings[codigo] || `Taller ${codigo}`;
+        if (!agrupadosPorNombre[nombre]) {
+          agrupadosPorNombre[nombre] = [];
+        }
+        agrupadosPorNombre[nombre].push(codigo);
+      });
+      
+      // Convertir a array y ordenar por nombre
+      const talleresAgrupadosArray = Object.entries(agrupadosPorNombre)
+        .map(([nombre, codigos]) => ({
+          nombre,
+          codigos: codigos.sort((a, b) => {
+            const numA = Number(a);
+            const numB = Number(b);
+            if (!isNaN(numA) && !isNaN(numB)) {
+              return numA - numB;
+            }
+            return String(a).localeCompare(String(b));
+          })
+        }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+      
+      setTalleresAgrupados(talleresAgrupadosArray);
+    } catch (error) {
+      console.error('Error cargando mapeos de talleres:', error);
+    }
+  };
 
   useEffect(() => {
     loadOportunidades();
@@ -48,7 +122,23 @@ const Oportunidades = () => {
   const loadConfigOportunidades = async () => {
     try {
       const response = await getConfigOportunidades();
-      setParametros(response.data);
+      const config = response.data;
+      setParametros(config);
+      
+      // Establecer fechas por defecto basadas en la configuración
+      const mesesDesdeCierre = config?.mesesDesdeCierre || 3;
+      const fechasDefault = getDefaultDates(mesesDesdeCierre);
+      
+      // Solo establecer fechas por defecto si no hay fechas ya establecidas
+      setFilters(prev => {
+        if (!prev.fechaDesde && !prev.fechaHasta) {
+          return {
+            ...prev,
+            ...fechasDefault
+          };
+        }
+        return prev;
+      });
     } catch (error) {
       console.error('Error cargando configuración de oportunidades:', error);
     }
@@ -88,12 +178,16 @@ const Oportunidades = () => {
   };
 
   const handleClearFilters = () => {
+    // Al limpiar filtros, restaurar las fechas por defecto
+    const mesesDesdeCierre = parametros?.mesesDesdeCierre || 3;
+    const fechasDefault = getDefaultDates(mesesDesdeCierre);
+    
     setFilters({
       search: '',
       taller: '',
-      fechaDesde: '',
-      fechaHasta: '',
-      estado: ''
+      ...fechasDefault,
+      estado: '',
+      subEstado: ''
     });
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -113,6 +207,60 @@ const Oportunidades = () => {
     const hoy = new Date();
     const meses = Math.floor((hoy - fecha) / (1000 * 60 * 60 * 24 * 30));
     return `${meses} meses`;
+  };
+
+  const getEstadoBadge = (estado, subEstado = null) => {
+    if (estado === 'cerrado') {
+      // Rosa claro con texto rojo oscuro
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fce7f3', color: '#991b1b' }}>
+          Cerrado
+        </span>
+      );
+    }
+    
+    if (estado === 'aceptado') {
+      // Verde claro con texto verde oscuro
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>
+          Aceptado
+        </span>
+      );
+    }
+    
+    if (estado === 'abierto') {
+      if (subEstado === 'en_espera') {
+        // Amarillo dorado con texto marrón/negro oscuro
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fde047', color: '#713f12' }}>
+            Abierto (En espera)
+          </span>
+        );
+      }
+      
+      if (subEstado === 'pendiente') {
+        // Rojo-naranja con texto rojo oscuro
+        return (
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+            Abierto (Pendiente)
+          </span>
+        );
+      }
+      
+      // Si no tiene subEstado, mostrar como pendiente por defecto
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+          Abierto (Pendiente)
+        </span>
+      );
+    }
+    
+    // Estado por defecto
+    return (
+      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fdba74', color: '#991b1b' }}>
+        Abierto (Pendiente)
+      </span>
+    );
   };
 
   // Definir columnas específicas para Oportunidades (usando nombres originales para mapeos)
@@ -195,34 +343,24 @@ const Oportunidades = () => {
       )
     },
     {
-      header: 'Nombre taller',
-      key: 'Nombre taller',
+      header: 'Taller',
+      key: 'Taller',
       width: '130px',
-      render: (value, row) => (
-        <span className="text-base truncate block" title={value || row.Taller}>
-          {value || row.Taller || '-'}
-        </span>
-      )
+      render: (value) => {
+        const nombreTaller = talleresMapping[value] || (value ? `Taller ${value}` : '-');
+        return (
+          <span className="text-base truncate block" title={nombreTaller}>
+            {nombreTaller}
+          </span>
+        );
+      }
     },
     {
       header: 'ESTADO',
       key: 'estado',
-      width: '120px',
-      render: (estado) => {
-        const badges = {
-          pendiente: { color: 'bg-gray-500', text: 'Pendiente', icon: <FaClock /> },
-          en_gestion: { color: 'bg-blue-500', text: 'En Gestión', icon: <FaCog /> },
-          a_tratar: { color: 'bg-orange-500', text: 'A Tratar', icon: <FaExclamationTriangle /> },
-          cerrado: { color: 'bg-green-500', text: 'Cerrado', icon: <FaCheck /> }
-        };
-        
-        const badge = badges[estado] || badges.pendiente;
-        return (
-          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-white text-xs font-medium ${badge.color}`}>
-            {badge.icon}
-            {badge.text}
-          </span>
-        );
+      width: '180px',
+      render: (estado, row) => {
+        return getEstadoBadge(estado, row.subEstado);
       }
     },
     {
@@ -302,6 +440,21 @@ const Oportunidades = () => {
           />
         </Filters.Item>
 
+        <Filters.Item label="Taller">
+          <select
+            value={filters.taller}
+            onChange={(e) => handleFilterChange('taller', e.target.value)}
+            className="w-full"
+          >
+            <option value="">Todos los talleres</option>
+            {talleresAgrupados.map(({ nombre, codigos }) => (
+              <option key={nombre} value={codigos.join(',')}>
+                {nombre}{codigos.length > 1 ? ` (${codigos.join(', ')})` : ''}
+              </option>
+            ))}
+          </select>
+        </Filters.Item>
+
         <Filters.Item label="Estado">
           <select
             value={filters.estado}
@@ -309,12 +462,25 @@ const Oportunidades = () => {
             className="w-full"
           >
             <option value="">Todos los estados</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="en_gestion">En Gestión</option>
-            <option value="a_tratar">A Tratar</option>
             <option value="cerrado">Cerrado</option>
+            <option value="aceptado">Aceptado</option>
+            <option value="abierto">Abierto</option>
           </select>
         </Filters.Item>
+        
+        {filters.estado === 'abierto' && (
+          <Filters.Item label="SubEstado">
+            <select
+              value={filters.subEstado || ''}
+              onChange={(e) => handleFilterChange('subEstado', e.target.value)}
+              className="w-full"
+            >
+              <option value="">Todos los subEstados</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="en_espera">En espera</option>
+            </select>
+          </Filters.Item>
+        )}
 
         <Filters.Item label="Por página">
           <select

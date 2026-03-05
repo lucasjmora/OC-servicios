@@ -50,6 +50,9 @@ citaSchema.index({ Asesor: 1 });
 citaSchema.index({ Nombre: 'text', Matricula: 'text' });
 citaSchema.index({ Matricula: 1, 'Fecha ci': 1 }); // Índice para asistencia
 citaSchema.index({ EstadoAsistencia: 1 }); // Índice para filtros de asistencia
+citaSchema.index({ Usuario: 1 }); // Índice para búsquedas por usuario (estadísticas de Martina)
+citaSchema.index({ 'Fecha cr': 1 }); // Índice para estadísticas mensuales
+citaSchema.index({ Usuario: 1, 'Fecha cr': 1 }); // Índice compuesto para estadísticas de Martina
 
 const Cita = mongoose.model('Cita', citaSchema);
 

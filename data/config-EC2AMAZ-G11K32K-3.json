@@ -1,0 +1,66 @@
+{
+  "mongodb": {
+    "uri": "mongodb+srv://lucasjmora:rUAhjnEbxWJXv9nY@lm-mongodb.mw28zss.mongodb.net/oc_servicios?retryWrites=true&w=majority",
+    "database": "oc_servicios",
+    "collections": {
+      "citas": "citas",
+      "ingresos": "ingresos"
+    }
+  },
+  "filePaths": {
+    "citas": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx",
+    "ingresos": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx"
+  },
+  "scheduler": {
+    "enabled": false,
+    "cronExpression": "0 0 */6 * *",
+    "lastRun": null,
+    "nextRun": null
+  },
+  "mappings": {
+    "talleres": {
+      "1": "GV PE",
+      "2": "GV JU",
+      "9": "GV SN",
+      "10": "GV SN",
+      "15": "GV CO",
+      "17": "GV TR",
+      "41": "FC PE ",
+      "42": "FC JU",
+      "43": "FC SN",
+      "44": "FC CH",
+      "45": "FC 9J",
+      "51": "PW GP",
+      "52": "PW SR",
+      "141": "GV PM",
+      "155": "GV CO",
+      "177": "GV TR",
+      "414": "FC CS",
+      "415": "FC OL",
+      "416": "FC TL",
+      "1441": "GV PM"
+    },
+    "usuarios": {
+      "userQIS-octupus": "Martina"
+    },
+    "campos": {
+      "Desaveria": "Motivo",
+      "Matrícula vehí": "Patente"
+    }
+  },
+  "asistencia": {
+    "diasTolerancia": 5
+  },
+  "lastImport": null,
+  "createdAt": "2025-10-11T03:30:40.776Z",
+  "updatedAt": "2025-10-11T03:30:40.776Z",
+  "lastUpdated": "2026-01-22T21:38:30.901Z",
+  "version": "1.0.0",
+  "oportunidades": {
+    "palabrasClave": "serv",
+    "mesesDesdeCierre": 6
+  },
+  "accesorios": {
+    "diasEspera": 2
+  }
+}

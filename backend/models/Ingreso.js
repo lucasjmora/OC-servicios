@@ -13,6 +13,7 @@ const ingresoSchema = new mongoose.Schema({
   Estad: String,
   Numero: String,
   'Matrícula vehí': String,
+  FMatric: Date, // Excel "F.Matric" (fecha; el limpiador quita el punto)
   'Cta cargo': String,
   CLIENTE: String,
   Recepcionista: String,

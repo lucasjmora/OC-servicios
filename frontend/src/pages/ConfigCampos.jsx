@@ -11,7 +11,7 @@ const CAMPOS_CITAS = [
 
 const CAMPOS_INGRESOS = [
   'Referencia', 'Taller', 'Nombre taller', 'Tipo O', 'Estad', 'Numero',
-  'Matrícula vehí', 'Cta cargo', 'CLIENTE', 'Recepcionista', 'Fecaper',
+  'Matrícula vehí', 'FMatric', 'Cta cargo', 'CLIENTE', 'Recepcionista', 'Fecaper',
   'F cierr', 'Serie/num', 'Desaveria', 'Usuario Cita', 'Bastidor', 'Modelo',
   'BASE', 'Tiemfact', 'Mano obra', 'BENEFICIO', 'Total material',
   'BENEFICIOS REC', 'SUBARRENDADO', 'BENEFSUB', 'Observaciones', 'Km',

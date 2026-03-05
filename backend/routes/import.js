@@ -8,6 +8,13 @@ const router = express.Router();
 // Importación manual
 router.post('/manual', async (req, res) => {
   try {
+    // Verificar que la conexión a MongoDB esté lista
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ 
+        error: 'MongoDB no está conectado. Por favor, espera unos segundos y vuelve a intentar.' 
+      });
+    }
+    
     // Obtener rutas de archivos desde configuración
     const config = await Configuracion.findOne({ singleton: true });
     
@@ -30,6 +37,7 @@ router.post('/manual', async (req, res) => {
     
     res.json(resultado);
   } catch (error) {
+    console.error('Error en importación manual:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -82,6 +90,26 @@ router.get('/progress', async (req, res) => {
     res.json({
       success: true,
       data: progress
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Obtener logs recientes de importación
+router.get('/logs', async (req, res) => {
+  try {
+    const { getRecentLogs } = await import('../services/importService.js');
+    const filter = req.query.filter || null;
+    const limit = parseInt(req.query.limit) || 100;
+    const logs = getRecentLogs(filter, limit);
+    res.json({
+      success: true,
+      logs: logs,
+      total: logs.length
     });
   } catch (error) {
     res.status(500).json({ 

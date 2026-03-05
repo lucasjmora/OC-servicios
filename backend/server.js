@@ -2,6 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Importar rutas
 import configRoutes from './routes/config.js';
@@ -11,9 +17,18 @@ import ingresosRoutes from './routes/ingresos.js';
 import diagnosticRoutes from './routes/diagnostic.js';
 import asistenciaRoutes from './routes/asistencia.js';
 import oportunidadesRoutes from './routes/oportunidades.js';
+import unidadesParadasRoutes from './routes/unidadesParadas.js';
+import configUnidadesParadasRoutes from './routes/configUnidadesParadas.js';
+import legalesRoutes from './routes/legales.js';
+import configLegalesRoutes from './routes/configLegales.js';
+import dashboardRoutes from './routes/dashboard.js';
+import boletosRoutes from './routes/boletos.js';
+import botAnalyzerRoutes from './routes/botAnalyzer.js';
+import ventasRoutes from './routes/ventas.js';
 
 // Importar servicios
-import { startScheduler } from './services/schedulerService.js';
+// // import { startScheduler } from './services/schedulerService.js';
+import { startBoletosScheduler } from './services/boletosSchedulerService.js';
 import Configuracion from './models/Configuracion.js';
 import configStorageService from './services/configStorageService.js';
 
@@ -21,10 +36,10 @@ import configStorageService from './services/configStorageService.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
-// Middleware
-app.use(cors());
+// Middleware: CORS abierto para acceso desde cualquier origen (red local / producción)
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -42,6 +57,14 @@ app.use('/api/ingresos', ingresosRoutes);
 app.use('/api/diagnostic', diagnosticRoutes);
 app.use('/api/asistencia', asistenciaRoutes);
 app.use('/api/oportunidades', oportunidadesRoutes);
+app.use('/api/unidades-paradas', unidadesParadasRoutes);
+app.use('/api/config/unidades-paradas', configUnidadesParadasRoutes);
+app.use('/api/legales', legalesRoutes);
+app.use('/api/config/legales', configLegalesRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/boletos', boletosRoutes);
+app.use('/api/bot-analyzer', botAnalyzerRoutes);
+app.use('/api/ventas', ventasRoutes);
 
 // Ruta de health check
 app.get('/api/health', (req, res) => {
@@ -52,7 +75,25 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Manejo de rutas no encontradas
+// 404 para rutas API no encontradas
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'Ruta no encontrada' });
+  }
+  next();
+});
+
+// En produccion: servir frontend desde el mismo servidor (un solo puerto 5001, evita ERR_CONNECTION_RESET en 3001)
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
+if (process.env.SERVE_FRONTEND !== 'false' && fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
+// Fallback 404 para el resto
 app.use('*', (req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
@@ -112,7 +153,7 @@ async function connectDB() {
           }
           
           // Iniciar scheduler si está habilitado
-          await startScheduler();
+          // await startScheduler();
         } else {
           console.log('ℹ️  Configuración no encontrada en base de datos, usando configuración local');
         }
@@ -167,14 +208,28 @@ mongoose.connection.on('disconnected', () => {
 // Iniciar servidor
 async function startServer() {
   try {
-    // Iniciar servidor HTTP primero
-    app.listen(PORT, () => {
+    // Obtener IP local para mostrar en logs
+    const nets = os.networkInterfaces();
+    let localIP = 'localhost';
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          localIP = net.address;
+          break;
+        }
+      }
+      if (localIP !== 'localhost') break;
+    }
+
+    const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 = escuchar en todas las interfaces (acceso por red)
+    app.listen(PORT, HOST, () => {
       console.log('');
       console.log('═══════════════════════════════════════════');
       console.log('   🚀 OC Servicios Backend');
       console.log('═══════════════════════════════════════════');
       console.log(`   Puerto: ${PORT}`);
-      console.log(`   API: http://localhost:${PORT}/api`);
+      console.log(`   Local:  http://localhost:${PORT}/api`);
+      console.log(`   Red:    http://${localIP}:${PORT}/api`);
       console.log(`   Health: http://localhost:${PORT}/api/health`);
       console.log('═══════════════════════════════════════════');
       console.log('');
@@ -182,6 +237,9 @@ async function startServer() {
     
     // Intentar conectar a MongoDB después de iniciar el servidor
     await connectDB();
+    
+    // Iniciar scheduler de boletos para verificación automática de estados
+    startBoletosScheduler();
     
   } catch (error) {
     console.error('❌ Error iniciando servidor:', error);
@@ -201,7 +259,10 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Iniciar
-startServer();
+// Iniciar con manejo de errores
+startServer().catch((error) => {
+  console.error('💥 Error fatal iniciando servidor:', error);
+  process.exit(1);
+});
 
 
