@@ -7,6 +7,8 @@ import axios from 'axios';
 
 const router = express.Router();
 
+const escapeRegex = (str) => String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Obtener lista de boletos con filtros y paginación
 router.get('/', async (req, res) => {
   try {
@@ -18,6 +20,8 @@ router.get('/', async (req, res) => {
       subEstado = '',
       tipoVenta = '',
       ciudad = '',
+      suc = '',
+      marca = '',
       estadoBoleto = '',
       fechaDesde = '',
       fechaHasta = ''
@@ -52,6 +56,71 @@ router.get('/', async (req, res) => {
           filters.$or = ciudadConditions;
         } else {
           filters.$or = ciudadConditions;
+        }
+      }
+    }
+
+    // Filtro por SUC (sucursal) - múltiple selección; usa ciudadMarcaEmpresa para mapear ciudad|marca -> suc
+    if (suc) {
+      const sucsArray = suc.split(',').map(s => s.trim()).filter(s => s);
+      if (sucsArray.length > 0) {
+        const config = await Configuracion.findOne({ singleton: true }).lean();
+        const ciudadMarcaEmpresa = config?.accesorios?.ciudadMarcaEmpresa || {};
+        const sucsSet = new Set(sucsArray.map(s => s.trim()));
+        const pairs = [];
+        for (const [key, emp] of Object.entries(ciudadMarcaEmpresa)) {
+          const empTrim = emp && String(emp).trim();
+          if (empTrim && sucsSet.has(empTrim)) {
+            const parts = key.split('|');
+            const c = (parts[0] || '').trim();
+            const m = (parts[1] || '').trim();
+            if (c && m) pairs.push({ ciudad: c, marca: m });
+          }
+        }
+        if (pairs.length > 0) {
+          const sucConditions = pairs.map(({ ciudad: c, marca: m }) => ({
+            $and: [
+              {
+                $or: [
+                  { 'datosBoleto.origen.city': { $regex: escapeRegex(c), $options: 'i' } },
+                  { 'datosBoleto.origen.ciudad': { $regex: escapeRegex(c), $options: 'i' } }
+                ]
+              },
+              {
+                $or: [
+                  { 'datosBoleto.vehicleId.Brand': { $regex: escapeRegex(m), $options: 'i' } },
+                  { 'datosBoleto.marca': { $regex: escapeRegex(m), $options: 'i' } }
+                ]
+              }
+            ]
+          }));
+          if (filters.$and) {
+            filters.$and.push({ $or: sucConditions });
+          } else if (filters.$or) {
+            filters.$and = [{ $or: filters.$or }, { $or: sucConditions }];
+            delete filters.$or;
+          } else {
+            filters.$or = sucConditions;
+          }
+        }
+      }
+    }
+
+    // Filtro por marca (múltiple selección)
+    if (marca) {
+      const marcasArray = marca.split(',').map(m => m.trim()).filter(m => m);
+      if (marcasArray.length > 0) {
+        const marcaConditions = marcasArray.flatMap(marcaNombre => [
+          { 'datosBoleto.vehicleId.Brand': { $regex: escapeRegex(marcaNombre), $options: 'i' } },
+          { 'datosBoleto.marca': { $regex: escapeRegex(marcaNombre), $options: 'i' } }
+        ]);
+        if (filters.$and) {
+          filters.$and.push({ $or: marcaConditions });
+        } else if (filters.$or) {
+          filters.$and = [{ $or: filters.$or }, { $or: marcaConditions }];
+          delete filters.$or;
+        } else {
+          filters.$or = marcaConditions;
         }
       }
     }
