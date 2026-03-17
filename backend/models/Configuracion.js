@@ -21,7 +21,8 @@ const configuracionSchema = new mongoose.Schema({
   // Rutas de archivos Excel
   filePaths: {
     citas: String,
-    ingresos: String
+    ingresos: String,
+    orsAbiertas: String
   },
   
   // Configuración del scheduler
@@ -43,6 +44,11 @@ const configuracionSchema = new mongoose.Schema({
       default: new Map()
     },
     campos: {
+      type: Map,
+      of: String,
+      default: new Map()
+    },
+    orsAbiertasTalleres: {
       type: Map,
       of: String,
       default: new Map()

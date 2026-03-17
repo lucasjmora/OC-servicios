@@ -56,9 +56,9 @@ router.get('/', async (req, res) => {
               database: 'oc_servicios',
               collections: { citas: 'citas', ingresos: 'ingresos' }
             },
-            filePaths: { citas: '', ingresos: '' },
+            filePaths: { citas: '', ingresos: '', orsAbiertas: '' },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
-            mappings: { talleres: new Map(), usuarios: new Map(), campos: new Map() }
+            mappings: { talleres: new Map(), usuarios: new Map(), campos: new Map(), orsAbiertasTalleres: new Map() }
           });
         }
       } catch (dbError) {
@@ -67,9 +67,9 @@ router.get('/', async (req, res) => {
           // Configuración por defecto si no hay nada disponible
           config = {
             mongodb: { uri: '', database: 'oc_servicios', collections: { citas: 'citas', ingresos: 'ingresos' } },
-            filePaths: { citas: '', ingresos: '' },
+            filePaths: { citas: '', ingresos: '', orsAbiertas: '' },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
-            mappings: { talleres: [], usuarios: [], campos: {} }
+            mappings: { talleres: [], usuarios: [], campos: {}, orsAbiertasTalleres: {} }
           };
         }
       }

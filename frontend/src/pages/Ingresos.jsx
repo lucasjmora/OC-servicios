@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
-import * as XLSX from 'xlsx';
-import { getIngresos, getMappings, getUniqueValues } from '../services/api';
+import { getIngresos, getMappings, getUniqueValues, exportIngresosStream } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
 import Pagination from '../components/Pagination';
 import Badge from '../components/Badge';
 import { safeFormatDate } from '../utils/dateUtils';
-import { FaSearch, FaFileExcel } from 'react-icons/fa';
+import { FaSearch, FaFileExport } from 'react-icons/fa';
 import { useFieldMappings } from '../hooks/useFieldMappings';
-
-const DATE_KEYS = ['Fecaper', 'F cierr', 'FMatric', 'FEC OBS '];
 
 const Ingresos = ({ onlyEstadC = false }) => {
   const [ingresos, setIngresos] = useState([]);
@@ -365,34 +362,20 @@ const Ingresos = ({ onlyEstadC = false }) => {
     : baseColumns;
   const columns = mapColumns(columnsToMap);
 
-  const handleExportExcel = async () => {
+  const handleExportCSV = async () => {
     if (!onlyEstadC) return;
     setExporting(true);
     try {
-      const params = { ...filters, page: 1, limit: 10000, ...(onlyEstadC && { excludeTalleres: MKT_EXCLUDED_TALLERES.join(',') }), ...(onlyEstadC && { tipoOPrefix: '1,2' }), ...(onlyEstadC && { sortBy: 'F cierr' }) };
-      const response = await getIngresos(params);
-      const data = response.data?.data || [];
-      const headers = columns.map((col) => col.header);
-      const rows = data.map((row) => {
-        const obj = {};
-        columns.forEach((col) => {
-          let value = row[col.key];
-          if (DATE_KEYS.includes(col.key) && value) {
-            value = safeFormatDate(value) || value;
-          }
-          obj[col.header] = value !== undefined && value !== null ? value : '';
-        });
-        return obj;
-      });
-      const ws = rows.length > 0
-        ? XLSX.utils.json_to_sheet(rows)
-        : XLSX.utils.aoa_to_sheet([headers]);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Ingresos Mkt');
-      const fileName = `ingresos-mkt-${new Date().toISOString().slice(0, 10)}.xlsx`;
-      XLSX.writeFile(wb, fileName);
+      const params = {
+        ...filters,
+        excludeTalleres: MKT_EXCLUDED_TALLERES.join(','),
+        tipoOPrefix: '1,2',
+        sortBy: 'F cierr'
+      };
+      await exportIngresosStream(params);
     } catch (err) {
-      console.error('Error exportando Excel:', err);
+      console.error('Error exportando CSV:', err);
+      alert('Error al exportar. Intente nuevamente o aplique filtros para reducir los datos.');
     } finally {
       setExporting(false);
     }
@@ -406,12 +389,12 @@ const Ingresos = ({ onlyEstadC = false }) => {
         action={onlyEstadC && (
           <button
             type="button"
-            onClick={handleExportExcel}
+            onClick={handleExportCSV}
             disabled={exporting}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium"
           >
-            <FaFileExcel className="text-lg" />
-            {exporting ? 'Exportando...' : 'Exportar a Excel'}
+            <FaFileExport className="text-lg" />
+            {exporting ? 'Exportando...' : 'Exportar a CSV'}
           </button>
         )}
       />

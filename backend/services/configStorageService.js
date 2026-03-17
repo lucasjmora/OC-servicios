@@ -239,7 +239,8 @@ class ConfigStorageService {
       },
       filePaths: {
         citas: 'C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx',
-        ingresos: 'C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx'
+        ingresos: 'C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx',
+        orsAbiertas: ''
       },
       scheduler: {
         enabled: false,
@@ -295,7 +296,8 @@ class ConfigStorageService {
   getFilePaths() {
     return this.config?.filePaths || {
       citas: '',
-      ingresos: ''
+      ingresos: '',
+      orsAbiertas: ''
     };
   }
 

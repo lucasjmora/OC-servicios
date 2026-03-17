@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { executeImport, getImportStatus, getImportProgress, getLastSuccessfulImport } from '../services/importService.js';
+import { refreshORsPivot } from '../services/orsAbiertasService.js';
 import Configuracion from '../models/Configuracion.js';
 
 const router = express.Router();
@@ -34,6 +35,17 @@ router.post('/manual', async (req, res) => {
     
     // Ejecutar importación
     const resultado = await executeImport(citas, ingresos);
+
+    // Actualizar pivot de ORs Abiertas si hay ruta configurada (no falla si hay error)
+    const orsAbiertasPath = config.filePaths?.orsAbiertas;
+    if (orsAbiertasPath && orsAbiertasPath.trim()) {
+      try {
+        await refreshORsPivot(orsAbiertasPath);
+        console.log('Pivot de ORs Abiertas actualizado correctamente');
+      } catch (orsError) {
+        console.error('Error actualizando pivot ORs Abiertas:', orsError.message);
+      }
+    }
     
     res.json(resultado);
   } catch (error) {

@@ -25,6 +25,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import boletosRoutes from './routes/boletos.js';
 import botAnalyzerRoutes from './routes/botAnalyzer.js';
 import ventasRoutes from './routes/ventas.js';
+import orsAbiertasRoutes from './routes/orsAbiertas.js';
 
 // Importar servicios
 // // import { startScheduler } from './services/schedulerService.js';
@@ -65,6 +66,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/boletos', boletosRoutes);
 app.use('/api/bot-analyzer', botAnalyzerRoutes);
 app.use('/api/ventas', ventasRoutes);
+app.use('/api/ors-abiertas', orsAbiertasRoutes);
 
 // Ruta de health check
 app.get('/api/health', (req, res) => {

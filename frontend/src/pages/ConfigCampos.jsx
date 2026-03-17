@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '../components/PageHeader';
-import { FaTags, FaSave } from 'react-icons/fa';
-import { getMappings, updateMappings } from '../services/api';
+import { FaTags, FaSave, FaWarehouse } from 'react-icons/fa';
+import { getMappings, updateMappings, getORsPivot } from '../services/api';
 
 // Campos predefinidos de las colecciones
 const CAMPOS_CITAS = [
@@ -22,6 +22,9 @@ const CAMPOS_INGRESOS = [
 const ConfigCampos = () => {
   const [mappingsCitas, setMappingsCitas] = useState({});
   const [mappingsIngresos, setMappingsIngresos] = useState({});
+  const [mappingsOrsTalleres, setMappingsOrsTalleres] = useState({});
+  const [talleresOrs, setTalleresOrs] = useState([]);
+  const [loadingOrs, setLoadingOrs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
@@ -31,23 +34,44 @@ const ConfigCampos = () => {
     loadMappings();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'orsAbiertas') {
+      loadOrsData();
+    }
+  }, [activeTab]);
+
   const loadMappings = async () => {
     try {
       setLoading(true);
-      const [citasResponse, ingresosResponse] = await Promise.all([
+      const [citasResponse, ingresosResponse, orsResponse] = await Promise.all([
         getMappings('campos'),
-        getMappings('campos')
+        getMappings('campos'),
+        getMappings('orsAbiertasTalleres')
       ]);
       
-      // Los mapeos se almacenan en un solo objeto 'campos' en el backend
-      // pero podemos separarlos por prefijo o usar la misma configuración
       setMappingsCitas(citasResponse.data || {});
       setMappingsIngresos(ingresosResponse.data || {});
+      setMappingsOrsTalleres(orsResponse.data || {});
     } catch (error) {
       console.error('Error cargando mapeos:', error);
       setMessage({ type: 'error', text: 'Error cargando mapeos de campos' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadOrsData = async () => {
+    try {
+      setLoadingOrs(true);
+      const res = await getORsPivot();
+      const pivot = res.data?.data || {};
+      const talleres = (pivot.talleres || []).filter(t => t !== 'Total');
+      setTalleresOrs(talleres);
+    } catch (error) {
+      console.error('Error cargando talleres ORs:', error);
+      setTalleresOrs([]);
+    } finally {
+      setLoadingOrs(false);
     }
   };
 
@@ -57,8 +81,13 @@ const ConfigCampos = () => {
         ...prev,
         [campo]: nuevoNombre
       }));
-    } else {
+    } else if (tipo === 'ingresos') {
       setMappingsIngresos(prev => ({
+        ...prev,
+        [campo]: nuevoNombre
+      }));
+    } else {
+      setMappingsOrsTalleres(prev => ({
         ...prev,
         [campo]: nuevoNombre
       }));
@@ -69,13 +98,13 @@ const ConfigCampos = () => {
     try {
       setSaving(true);
       
-      // Combinar todos los mapeos en un solo objeto
       const allMappings = {
         ...mappingsCitas,
         ...mappingsIngresos
       };
       
       await updateMappings('campos', allMappings);
+      await updateMappings('orsAbiertasTalleres', mappingsOrsTalleres);
       
       setMessage({ type: 'success', text: 'Mapeos de campos guardados correctamente' });
       setTimeout(() => setMessage(null), 3000);
@@ -182,6 +211,20 @@ const ConfigCampos = () => {
             Campos de Ingresos ({CAMPOS_INGRESOS.length})
           </div>
         </button>
+
+        <button
+          onClick={() => setActiveTab('orsAbiertas')}
+          className={`px-6 py-3 font-semibold transition-colors ${
+            activeTab === 'orsAbiertas'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FaWarehouse />
+            Nombres de taller ORs Abiertas ({loadingOrs ? '...' : talleresOrs.length})
+          </div>
+        </button>
       </div>
 
       {/* Contenido de tabs */}
@@ -193,6 +236,22 @@ const ConfigCampos = () => {
         <>
           {activeTab === 'citas' && renderCamposTable(CAMPOS_CITAS, mappingsCitas, 'citas')}
           {activeTab === 'ingresos' && renderCamposTable(CAMPOS_INGRESOS, mappingsIngresos, 'ingresos')}
+          {activeTab === 'orsAbiertas' && (
+            loadingOrs ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="text-gray-400">Cargando talleres desde ORs Abiertas...</div>
+              </div>
+            ) : talleresOrs.length === 0 ? (
+              <div className="bg-background-card border border-gray-700 rounded-lg p-8 text-center">
+                <p className="text-gray-400">
+                  No hay talleres disponibles. Configure la ruta del archivo Excel en Configuración → Actualización de datos, 
+                  ejecute &quot;Actualizar Ahora&quot; y vuelva a esta solapa para cargar los talleres.
+                </p>
+              </div>
+            ) : (
+              renderCamposTable(talleresOrs, mappingsOrsTalleres, 'orsAbiertas')
+            )
+          )}
         </>
       )}
 

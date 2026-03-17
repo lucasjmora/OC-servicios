@@ -6,6 +6,14 @@ import Pagination from '../components/Pagination';
 import BotConversacionModal from '../components/BotConversacionModal';
 import { FaRobot, FaSearch, FaArrowLeft, FaCalendar, FaEnvelope, FaEye, FaCheck, FaExclamationTriangle, FaTimes, FaFileExport } from 'react-icons/fa';
 
+// Lista fija de localidades por empresa (coincide con botAnalyzerService.js).
+// Se usa para el filtro para que TODAS las localidades estén disponibles, independientemente de la paginación.
+const LOCALIDADES_POR_EMPRESA = {
+  FC: ['Junín', 'Pergamino', 'Trenque Lauquen', '9 de Julio', 'Chivilcoy', 'San Nicolás', 'Olavarría', 'Coronel Suárez'],
+  GV: ['Junín', 'Pergamino', 'San Nicolás', 'Comodoro Rivadavia', 'Trelew', 'Puerto Madryn'],
+  PW: ['General Pico', 'Santa Rosa']
+};
+
 const BotAnalyzer = () => {
   const { empresa } = useParams();
   const navigate = useNavigate();
@@ -51,7 +59,7 @@ const BotAnalyzer = () => {
     );
   }
 
-  // Actualizar límite cuando cambie la empresa
+  // Actualizar límite y localidades cuando cambie la empresa
   useEffect(() => {
     if (empresa) {
       setPagination(prev => ({
@@ -59,6 +67,9 @@ const BotAnalyzer = () => {
         limit: 50,
         page: 1
       }));
+      // Inicializar localidades con la lista fija para que el filtro esté listo de inmediato
+      const baseLocalidades = LOCALIDADES_POR_EMPRESA[empresa?.toUpperCase()] || [];
+      setLocalidadesUnicas([...baseLocalidades].sort());
     }
   }, [empresa]);
 
@@ -112,11 +123,14 @@ const BotAnalyzer = () => {
         const conversationsData = response.data.data.conversations || [];
         setConversations(conversationsData);
         
-        // Extraer localidades únicas para el filtro
-        const localidades = [...new Set(conversationsData
+        // Usar lista fija de localidades por empresa y fusionar con las que aparecen en los datos
+        // (para que siempre estén todas, incluyendo Coronel Suárez, sin depender de la paginación)
+        const baseLocalidades = LOCALIDADES_POR_EMPRESA[empresa?.toUpperCase()] || [];
+        const localidadesEnDatos = [...new Set(conversationsData
           .map(conv => conv.localidad)
           .filter(loc => loc && loc.trim() !== '')
-        )].sort();
+        )];
+        const localidades = [...new Set([...baseLocalidades, ...localidadesEnDatos])].sort();
         setLocalidadesUnicas(localidades);
         
         setPagination(prev => ({

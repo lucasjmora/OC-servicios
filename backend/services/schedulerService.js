@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { executeImport } from './importService.js';
+import { refreshORsPivot } from './orsAbiertasService.js';
 import Configuracion from '../models/Configuracion.js';
 
 let scheduledTask = null;
@@ -17,7 +18,7 @@ export async function startScheduler() {
     }
     
     const { cronExpression } = config.scheduler;
-    const { citas, ingresos } = config.filePaths;
+    const { citas, ingresos, orsAbiertas } = config.filePaths;
     
     if (!citas || !ingresos) {
       console.log('Rutas de archivos no configuradas, scheduler no iniciado');
@@ -40,6 +41,15 @@ export async function startScheduler() {
       try {
         const resultado = await executeImport(citas, ingresos);
         console.log('Importación programada completada:', resultado);
+
+        if (orsAbiertas && orsAbiertas.trim()) {
+          try {
+            await refreshORsPivot(orsAbiertas);
+            console.log('Pivot de ORs Abiertas actualizado correctamente');
+          } catch (orsError) {
+            console.error('Error actualizando pivot ORs Abiertas:', orsError.message);
+          }
+        }
       } catch (error) {
         console.error('Error en importación programada:', error);
       }

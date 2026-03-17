@@ -85,6 +85,30 @@ export const getCitaById = (id) => api.get(`/citas/${id}`);
 
 export const getIngresos = (params) => api.get('/ingresos', { params });
 
+/**
+ * Exportación streaming de ingresos (hasta 500k filas).
+ * Usa fetch para recibir el stream sin cargar todo en memoria en el servidor.
+ */
+export async function exportIngresosStream(params) {
+  const searchParams = new URLSearchParams(params);
+  const url = `${getApiBaseUrl()}/ingresos/export?${searchParams.toString()}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(err.error || 'Error en la exportación');
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('content-disposition');
+  const filenameMatch = disposition && disposition.match(/filename="?([^";\n]+)"?/);
+  const filename = filenameMatch ? filenameMatch[1] : `ingresos-mkt-${new Date().toISOString().slice(0, 10)}.csv`;
+  const urlBlob = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = urlBlob;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(urlBlob);
+}
+
 export const getIngresoById = (id) => api.get(`/ingresos/${id}`);
 
 // ===== BOLETOS =====
@@ -279,6 +303,10 @@ export const procesarVentas = () => api.post('/ventas/procesar');
 export const getConfigVentas = () => api.get('/config/ventas');
 
 export const updateConfigVentas = (data) => api.put('/config/ventas', data);
+
+// ===== ORs ABIERTAS =====
+
+export const getORsPivot = () => api.get('/ors-abiertas/pivot');
 
 // ===== HEALTH CHECK =====
 

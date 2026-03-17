@@ -455,6 +455,22 @@ const ConfigActualizacion = () => {
               className="w-full font-mono text-sm"
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Archivo de ORs Abiertas
+            </label>
+            <input
+              type="text"
+              value={config.filePaths?.orsAbiertas || ''}
+              onChange={(e) => setConfig({
+                ...config,
+                filePaths: { ...config.filePaths, orsAbiertas: e.target.value }
+              })}
+              placeholder="C:\ruta\al\archivo\ORsAbiertas.xlsx"
+              className="w-full font-mono text-sm"
+            />
+          </div>
         </div>
       </div>
 
