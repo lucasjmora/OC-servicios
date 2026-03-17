@@ -1,7 +1,10 @@
 import React from 'react';
 import { FaFilter, FaTimes } from 'react-icons/fa';
 
-const Filters = ({ children, onClear, title = "Filtros" }) => {
+const Filters = ({ children, onClear, title = "Filtros", columns }) => {
+  const gridClass = columns
+    ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4'
+    : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4';
   return (
     <div className="bg-background-card border border-gray-700 rounded-lg p-4 mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -19,7 +22,7 @@ const Filters = ({ children, onClear, title = "Filtros" }) => {
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={gridClass}>
         {children}
       </div>
     </div>

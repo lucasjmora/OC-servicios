@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getBoletos, sincronizarBoletos, testBoletosConnection, getCiudadesBoletos, getEstadosBoleto, getConfigAccesorios } from '../services/api';
+import { getBoletos, sincronizarBoletos, testBoletosConnection, getCiudadesBoletos, getMarcasBoletos, getEstadosBoleto, getConfigAccesorios } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
@@ -24,6 +24,8 @@ const Accesorios = () => {
     subEstado: '',
     tipoVenta: ['VN', 'ADJ'],
     ciudad: [],
+    suc: [],
+    marca: [],
     estadoBoleto: ['Facturado', 'Aprobado'],
     fechaDesde: '',
     fechaHasta: ''
@@ -37,10 +39,18 @@ const Accesorios = () => {
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [tipoVentaDropdownOpen, setTipoVentaDropdownOpen] = useState(false);
   const [ciudadDropdownOpen, setCiudadDropdownOpen] = useState(false);
+  const [sucDropdownOpen, setSucDropdownOpen] = useState(false);
+  const [marcaDropdownOpen, setMarcaDropdownOpen] = useState(false);
   const [estadoBoletoDropdownOpen, setEstadoBoletoDropdownOpen] = useState(false);
   const [ciudadesDisponibles, setCiudadesDisponibles] = useState([]);
+  const [marcasDisponibles, setMarcasDisponibles] = useState([]);
   const [estadosBoletoDisponibles, setEstadosBoletoDisponibles] = useState([]);
   const [ciudadMarcaEmpresa, setCiudadMarcaEmpresa] = useState({});
+
+  const sucsDisponibles = Object.values(ciudadMarcaEmpresa || {})
+    .filter(v => v && String(v).trim())
+    .map(v => String(v).trim());
+  const sucsUnicos = [...new Set(sucsDisponibles)].sort();
 
   useEffect(() => {
     loadBoletos();
@@ -48,6 +58,7 @@ const Accesorios = () => {
 
   useEffect(() => {
     loadCiudades();
+    loadMarcas();
     loadEstadosBoleto();
     loadConfigAccesorios();
   }, []);
@@ -85,6 +96,12 @@ const Accesorios = () => {
       if (ciudadDropdownOpen && !event.target.closest('.ciudad-dropdown')) {
         setCiudadDropdownOpen(false);
       }
+      if (sucDropdownOpen && !event.target.closest('.suc-dropdown')) {
+        setSucDropdownOpen(false);
+      }
+      if (marcaDropdownOpen && !event.target.closest('.marca-dropdown')) {
+        setMarcaDropdownOpen(false);
+      }
       if (estadoBoletoDropdownOpen && !event.target.closest('.estado-boleto-dropdown')) {
         setEstadoBoletoDropdownOpen(false);
       }
@@ -94,7 +111,7 @@ const Accesorios = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [tipoVentaDropdownOpen, ciudadDropdownOpen, estadoBoletoDropdownOpen]);
+  }, [tipoVentaDropdownOpen, ciudadDropdownOpen, sucDropdownOpen, marcaDropdownOpen, estadoBoletoDropdownOpen]);
 
   const loadCiudades = async () => {
     try {
@@ -107,6 +124,20 @@ const Accesorios = () => {
       }
     } catch (error) {
       console.error('Error cargando ciudades:', error);
+    }
+  };
+
+  const loadMarcas = async () => {
+    try {
+      const response = await getMarcasBoletos();
+      if (response.data && response.data.marcas) {
+        const marcasFiltradas = response.data.marcas
+          .filter(m => m && String(m).trim() !== '')
+          .sort();
+        setMarcasDisponibles(marcasFiltradas);
+      }
+    } catch (error) {
+      console.error('Error cargando marcas:', error);
     }
   };
 
@@ -135,6 +166,12 @@ const Accesorios = () => {
         subEstado: filters.subEstado,
         ciudad: Array.isArray(filters.ciudad) && filters.ciudad.length > 0 
           ? filters.ciudad.join(',') 
+          : '',
+        suc: Array.isArray(filters.suc) && filters.suc.length > 0 
+          ? filters.suc.join(',') 
+          : '',
+        marca: Array.isArray(filters.marca) && filters.marca.length > 0 
+          ? filters.marca.join(',') 
           : '',
         estadoBoleto: Array.isArray(filters.estadoBoleto) && filters.estadoBoleto.length > 0 
           ? filters.estadoBoleto.join(',') 
@@ -230,6 +267,36 @@ const Accesorios = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
+  const handleSucChange = (sucVal, checked) => {
+    setFilters(prev => {
+      const currentSucs = prev.suc || [];
+      if (checked) {
+        if (!currentSucs.includes(sucVal)) {
+          return { ...prev, suc: [...currentSucs, sucVal] };
+        }
+      } else {
+        return { ...prev, suc: currentSucs.filter(s => s !== sucVal) };
+      }
+      return prev;
+    });
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleMarcaChange = (marcaVal, checked) => {
+    setFilters(prev => {
+      const currentMarcas = prev.marca || [];
+      if (checked) {
+        if (!currentMarcas.includes(marcaVal)) {
+          return { ...prev, marca: [...currentMarcas, marcaVal] };
+        }
+      } else {
+        return { ...prev, marca: currentMarcas.filter(m => m !== marcaVal) };
+      }
+      return prev;
+    });
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   const handleClearFilters = () => {
     setFilters({
       search: '',
@@ -237,6 +304,8 @@ const Accesorios = () => {
       subEstado: '',
       tipoVenta: ['VN', 'ADJ'],
       ciudad: [],
+      suc: [],
+      marca: [],
       estadoBoleto: ['Facturado', 'Aprobado'],
       fechaDesde: '',
       fechaHasta: ''
@@ -252,6 +321,7 @@ const Accesorios = () => {
       setSyncMessage('Sincronización completada exitosamente');
       await loadBoletos();
       await loadCiudades();
+      await loadMarcas();
       await loadEstadosBoleto();
     } catch (error) {
       console.error('Error sincronizando:', error);
@@ -640,7 +710,7 @@ const Accesorios = () => {
         </div>
       )}
 
-      <Filters onClear={handleClearFilters}>
+      <Filters onClear={handleClearFilters} columns={5}>
         <Filters.Item label="Búsqueda">
           <div className="relative">
             <input
@@ -841,6 +911,100 @@ const Accesorios = () => {
                     ))
                   ) : (
                     <div className="p-2 text-sm text-gray-400">Cargando ciudades...</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </Filters.Item>
+
+        <Filters.Item label="SUC">
+          <div className="relative suc-dropdown">
+            <button
+              type="button"
+              onClick={() => setSucDropdownOpen(!sucDropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <span className="truncate">
+                {filters.suc && filters.suc.length > 0
+                  ? `${filters.suc.length} sucursal${filters.suc.length > 1 ? 'es' : ''} seleccionada${filters.suc.length > 1 ? 's' : ''}`
+                  : 'Seleccionar sucursales'}
+              </span>
+              {sucDropdownOpen ? (
+                <FaChevronUp className="ml-2 text-gray-400" />
+              ) : (
+                <FaChevronDown className="ml-2 text-gray-400" />
+              )}
+            </button>
+            
+            {sucDropdownOpen && (
+              <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-64 overflow-y-auto">
+                <div className="p-2">
+                  {sucsUnicos.length > 0 ? (
+                    sucsUnicos.map(sucVal => (
+                      <label
+                        key={sucVal}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-gray-700 p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.suc?.includes(sucVal) || false}
+                          onChange={(e) => handleSucChange(sucVal, e.target.checked)}
+                          className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
+                        />
+                        <span className="text-sm text-white">{sucVal}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-gray-400">
+                      Configure ciudadMarcaEmpresa en Parámetros de Accesorios
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </Filters.Item>
+
+        <Filters.Item label="Marca">
+          <div className="relative marca-dropdown">
+            <button
+              type="button"
+              onClick={() => setMarcaDropdownOpen(!marcaDropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <span className="truncate">
+                {filters.marca && filters.marca.length > 0
+                  ? `${filters.marca.length} marca${filters.marca.length > 1 ? 's' : ''} seleccionada${filters.marca.length > 1 ? 's' : ''}`
+                  : 'Seleccionar marcas'}
+              </span>
+              {marcaDropdownOpen ? (
+                <FaChevronUp className="ml-2 text-gray-400" />
+              ) : (
+                <FaChevronDown className="ml-2 text-gray-400" />
+              )}
+            </button>
+            
+            {marcaDropdownOpen && (
+              <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-64 overflow-y-auto">
+                <div className="p-2">
+                  {marcasDisponibles.length > 0 ? (
+                    marcasDisponibles.map(marcaVal => (
+                      <label
+                        key={marcaVal}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-gray-700 p-2 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={filters.marca?.includes(marcaVal) || false}
+                          onChange={(e) => handleMarcaChange(marcaVal, e.target.checked)}
+                          className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500"
+                        />
+                        <span className="text-sm text-white">{marcaVal}</span>
+                      </label>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-gray-400">Cargando marcas...</div>
                   )}
                 </div>
               </div>
