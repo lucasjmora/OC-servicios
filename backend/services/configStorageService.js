@@ -156,6 +156,15 @@ class ConfigStorageService {
   }
 
   /**
+   * Convierte Map a objeto plano (MongoDB/Mongoose devuelve Maps)
+   */
+  _mapToObject(val) {
+    if (val instanceof Map) return Object.fromEntries(val);
+    if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+    return {};
+  }
+
+  /**
    * Actualiza los mapeos
    */
   async updateMappings(mappings) {
@@ -163,9 +172,13 @@ class ConfigStorageService {
       throw new Error('Servicio de configuración no inicializado');
     }
 
+    const normalized = {};
+    for (const [k, v] of Object.entries(mappings || {})) {
+      normalized[k] = this._mapToObject(v);
+    }
     this.config.mappings = {
       ...this.config.mappings,
-      ...mappings
+      ...normalized
     };
 
     await this.saveConfig();

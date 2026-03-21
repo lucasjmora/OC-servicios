@@ -65,7 +65,16 @@ const ConfigCampos = () => {
       setLoadingOrs(true);
       const res = await getORsPivot();
       const pivot = res.data?.data || {};
-      const talleres = (pivot.talleres || []).filter(t => t !== 'Total');
+      // Nombres originales del Excel: desde orders (cada orden tiene nombreTaller) o desde pivot
+      const desdeOrders = [...new Set((pivot.orders || [])
+        .map(o => o.nombreTaller)
+        .filter(n => n && n !== '-')
+      )].sort((a, b) => a.localeCompare(b));
+      const talleres = desdeOrders.length > 0
+        ? desdeOrders
+        : (pivot.talleresOriginales || []).length > 0
+          ? pivot.talleresOriginales
+          : (pivot.talleres || []).filter(t => t !== 'Total');
       setTalleresOrs(talleres);
     } catch (error) {
       console.error('Error cargando talleres ORs:', error);

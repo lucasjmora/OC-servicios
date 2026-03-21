@@ -1,0 +1,5 @@
+{
+  "ext": "js,json",
+  "ignore": ["node_modules", "*.test.js", "*.spec.js", "__tests__"],
+  "delay": "500"
+}

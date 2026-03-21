@@ -1,5 +1,7 @@
 import xlsx from 'xlsx';
 import fs from 'fs';
+import mongoose from 'mongoose';
+import configStorageService from './configStorageService.js';
 
 // Talleres excluidos del cuadro (no se consideran)
 const TALLERES_EXCLUIDOS = new Set([
@@ -189,6 +191,7 @@ function buildOrders(rows, colMap) {
     const fecAperVal = colMap.colFecAper ? row[colMap.colFecAper] : null;
     const dias = daysFromDate(fecAperVal);
     const referencia = colMap.colReferencia ? String(row[colMap.colReferencia] ?? '').trim() : '';
+    const tipo = colMap.colTipoOR ? String(row[colMap.colTipoOR] ?? '').trim() : '';
     const desAveria = colMap.colDesAveria ? String(row[colMap.colDesAveria] ?? '').trim() : '';
     const manoObra = colMap.colManoObra ? parseNum(row[colMap.colManoObra]) : null;
     const totalMaterial = colMap.colTotalMaterial ? parseNum(row[colMap.colTotalMaterial]) : null;
@@ -199,6 +202,7 @@ function buildOrders(rows, colMap) {
       nombreTaller,
       dias: dias != null ? dias : '-',
       referencia,
+      tipo: tipo || '-',
       desAveria,
       manoObra: manoObra != null ? manoObra : '-',
       totalMaterial: totalMaterial != null ? totalMaterial : '-',
@@ -209,12 +213,19 @@ function buildOrders(rows, colMap) {
 }
 
 /**
- * Construye la estructura de datos del pivot (conteo y suma de Base)
+ * Construye la estructura de datos del pivot (conteo y suma de Base).
+ * Agrupa por nombre mapeado para unificar talleres con el mismo mapeo.
  */
-function buildPivotData(rows, talleres, tiposOrden, colTaller, colTipoOR, colBase) {
+function buildPivotData(rows, talleresOriginales, tiposOrden, colTaller, colTipoOR, colBase, mapTaller) {
+  const talleresMapeadosSet = new Set();
+  talleresOriginales.forEach(t => {
+    if (t !== 'Total') talleresMapeadosSet.add(mapTaller(t));
+  });
+  const talleres = [...talleresMapeadosSet].sort((a, b) => a.localeCompare(b));
+  talleres.push('Total');
+
   const data = {};
   const sumBase = {};
-
   talleres.forEach(t => {
     data[t] = {};
     sumBase[t] = {};
@@ -225,7 +236,8 @@ function buildPivotData(rows, talleres, tiposOrden, colTaller, colTipoOR, colBas
   });
 
   rows.forEach(row => {
-    const taller = String(row[colTaller] ?? '').trim() || '(Sin taller)';
+    const tallerOrig = String(row[colTaller] ?? '').trim() || '(Sin taller)';
+    const taller = mapTaller(tallerOrig);
     const tipoOR = String(row[colTipoOR] ?? '').trim() || '(Sin tipo)';
     const baseVal = parseBaseValue(colBase ? row[colBase] : 0);
 
@@ -241,11 +253,12 @@ function buildPivotData(rows, talleres, tiposOrden, colTaller, colTipoOR, colBas
     sumBase['Total']['Total'] = (sumBase['Total']['Total'] || 0) + baseVal;
   });
 
-  return { data, sumBase };
+  return { data, sumBase, talleres };
 }
 
 /**
- * Lee el Excel, filtra filas con Base=0 y actualiza el cache en memoria
+ * Lee el Excel, filtra filas con Base=0 y actualiza el cache en memoria.
+ * Agrupa talleres por nombre mapeado (orsAbiertasTalleres) para unificarlos.
  */
 export async function refreshORsPivot(filePath) {
   if (!filePath || !filePath.trim()) {
@@ -256,13 +269,71 @@ export async function refreshORsPivot(filePath) {
 
   try {
     pivotCache.error = null;
+    let orsMappings = {};
+    try {
+      // Prioridad: MongoDB (fuente de verdad persistente) > configStorageService
+      if (mongoose.connection.readyState === 1) {
+        const Configuracion = (await import('../models/Configuracion.js')).default;
+        const config = await Configuracion.findOne({ singleton: true });
+        const raw = config?.mappings?.orsAbiertasTalleres;
+        if (raw) {
+          orsMappings = raw instanceof Map ? Object.fromEntries(raw) : (typeof raw === 'object' && raw !== null ? raw : {});
+        }
+      }
+      if (Object.keys(orsMappings).length === 0 && configStorageService.isInitialized) {
+        const m = configStorageService.getMappings();
+        const raw = m.orsAbiertasTalleres || {};
+        orsMappings = raw instanceof Map ? Object.fromEntries(raw) : (typeof raw === 'object' && raw !== null ? raw : {});
+      }
+      // Expandir: añadir claves desanitizadas (__DOT__ -> .) para búsqueda flexible
+      const expanded = { ...orsMappings };
+      for (const [k, v] of Object.entries(orsMappings)) {
+        if (k.startsWith('__DOT__')) {
+          expanded['.' + k.slice(7)] = v;
+        }
+        if (k.startsWith('__DOLR__')) {
+          expanded['$' + k.slice(8)] = v;
+        }
+      }
+      orsMappings = expanded;
+    } catch (e) {
+      console.warn('No se pudieron cargar mapeos orsAbiertasTalleres:', e.message);
+    }
+    const mapTaller = (nombre) => {
+      if (!nombre || typeof nombre !== 'string') return nombre;
+      const key = nombre.trim();
+      let mapped = orsMappings[key];
+      if (mapped && String(mapped).trim()) return String(mapped).trim();
+      // Variantes: Excel puede tener "GRANVILLE PEUGEOT" y mapeo ".GRANVILLE-PEUGEOT"
+      const conPunto = key.startsWith('.') ? key : '.' + key;
+      const sinPunto = key.startsWith('.') ? key.slice(1) : key;
+      const conGuion = key.replace(/\s+/g, '-').replace(/\s*-\s*/g, '-');
+      const conEspacio = key.replace(/-/g, ' ');
+      const conEspacioGuion = key.replace(/\s*-\s*/g, ' ');
+      const sanitizedDot = key.startsWith('.') ? '__DOT__' + key.slice(1) : key;
+      const variantes = [
+        conPunto, sinPunto, conGuion, conEspacio, conEspacioGuion,
+        conPunto.replace(/\s+/g, '-'), sinPunto.replace(/-/g, ' '),
+        sanitizedDot, '__DOT__' + sinPunto
+      ];
+      for (const v of variantes) {
+        mapped = orsMappings[v];
+        if (mapped && String(mapped).trim()) return String(mapped).trim();
+      }
+      return nombre;
+    };
+
     const result = readORsExcel(filePath);
     const { rows, talleres, tiposOrden, colTaller, colTipoOR, colBase } = result;
-    const { data, sumBase } = buildPivotData(rows, talleres, tiposOrden, colTaller, colTipoOR, colBase);
+    const { data, sumBase, talleres: talleresUnificados } = buildPivotData(
+      rows, talleres, tiposOrden, colTaller, colTipoOR, colBase, mapTaller
+    );
     const orders = buildOrders(rows, result);
+    const talleresOriginales = (talleres || []).filter(t => t !== 'Total');
 
     pivotCache = {
-      talleres,
+      talleres: talleresUnificados,
+      talleresOriginales,
       tiposOrden,
       data,
       sumBase,
@@ -285,6 +356,7 @@ export async function refreshORsPivot(filePath) {
 export function getORsPivot() {
   return {
     talleres: pivotCache.talleres || [],
+    talleresOriginales: pivotCache.talleresOriginales || [],
     tiposOrden: pivotCache.tiposOrden || [],
     data: pivotCache.data || {},
     sumBase: pivotCache.sumBase || {},

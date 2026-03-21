@@ -214,29 +214,20 @@ if (Test-Path $envPath) {
 }
 
 Write-Host ""
-Write-Host "[8/8] Construyendo frontend (como prod, puerto 5000)..." -ForegroundColor Yellow
+Write-Host "[8/8] Modo desarrollo con recarga automatica..." -ForegroundColor Yellow
 $env:VITE_BACKEND_PORT = '5000'
-Push-Location frontend
-if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-npm run build
-$buildOk = $LASTEXITCODE -eq 0
-Pop-Location
-if (-not $buildOk) {
-    Write-Host '[ERROR] Fallo build del frontend' -ForegroundColor Red
-    Read-Host 'Presiona Enter para salir'
-    exit 1
-}
-Write-Host 'OK Frontend construido' -ForegroundColor Green
+Write-Host "   Backend:  nodemon (reinicia al cambiar archivos .js)" -ForegroundColor Gray
+Write-Host "   Frontend: Vite (HMR - cambios sin recargar)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   DEV = IMAGEN DE PROD (puertos 5000/3000)" -ForegroundColor Green
+Write-Host "   DEV CON HOT RELOAD (puertos 5000/3000)" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Iniciando como produccion (backend + preview)..." -ForegroundColor Green
+Write-Host "Iniciando servidores..." -ForegroundColor Green
 Write-Host "   Backend:  http://localhost:5000" -ForegroundColor White
 Write-Host "   Frontend: http://localhost:3000" -ForegroundColor White
 Write-Host ""
-Write-Host "[!] Ctrl+C para detener." -ForegroundColor Yellow
+Write-Host "[!] Los cambios se aplican automaticamente. Ctrl+C para detener." -ForegroundColor Yellow
 Write-Host ""
 
 $env:PORT = '5000'
@@ -246,7 +237,7 @@ $env:FRONTEND_HOST = '0.0.0.0'
 $env:SERVE_FRONTEND = 'false'
 
 try {
-    npm run start:prod
+    npm run dev:hot
 } catch {
     Write-Host ""
     Write-Host "[ERROR] al iniciar servidores:" -ForegroundColor Red

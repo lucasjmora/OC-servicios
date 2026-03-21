@@ -3,8 +3,45 @@ import mongoose from 'mongoose';
 import Configuracion from '../models/Configuracion.js';
 import { restartScheduler } from '../services/schedulerService.js';
 import configStorageService from '../services/configStorageService.js';
+import { refreshORsPivot } from '../services/orsAbiertasService.js';
 
 const router = express.Router();
+
+// MongoDB restringe claves que comienzan con . o $ - se codifican para almacenamiento
+const PREFIX_DOT = '__DOT__';
+const PREFIX_DOLR = '__DOLR__';
+
+function sanitizeMappingKey(key) {
+  if (typeof key !== 'string') return key;
+  if (key.startsWith('.')) return PREFIX_DOT + key.slice(1);
+  if (key.startsWith('$')) return PREFIX_DOLR + key.slice(1);
+  return key;
+}
+
+function desanitizeMappingKey(key) {
+  if (typeof key !== 'string') return key;
+  if (key.startsWith(PREFIX_DOT)) return '.' + key.slice(PREFIX_DOT.length);
+  if (key.startsWith(PREFIX_DOLR)) return '$' + key.slice(PREFIX_DOLR.length);
+  return key;
+}
+
+function sanitizeMappingsForMongo(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[sanitizeMappingKey(k)] = v;
+  }
+  return out;
+}
+
+function desanitizeMappingsFromMongo(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[desanitizeMappingKey(k)] = v;
+  }
+  return out;
+}
 
 // Obtener configuración actual
 router.get('/', async (req, res) => {
@@ -216,8 +253,8 @@ router.get('/mappings/:type', async (req, res) => {
     
     const mappings = config.mappings[type];
     
-    // Convertir Map a objeto para JSON
-    const mappingsObj = mappings ? Object.fromEntries(mappings) : {};
+    // Convertir Map a objeto y restaurar claves originales (MongoDB no permite . o $ al inicio)
+    const mappingsObj = mappings ? desanitizeMappingsFromMongo(Object.fromEntries(mappings)) : {};
     
     res.json(mappingsObj);
   } catch (error) {
@@ -231,8 +268,9 @@ router.put('/mappings/:type', async (req, res) => {
     const { type } = req.params;
     const mappings = req.body;
     
-    // Convertir objeto a Map
-    const mappingsMap = new Map(Object.entries(mappings));
+    // Sanitizar claves para MongoDB (no permite . o $ al inicio)
+    const mappingsSafe = sanitizeMappingsForMongo(mappings);
+    const mappingsMap = new Map(Object.entries(mappingsSafe));
     
     const config = await Configuracion.findOneAndUpdate(
       { singleton: true },
@@ -252,7 +290,22 @@ router.put('/mappings/:type', async (req, res) => {
       console.error('⚠️  Error sincronizando mapeos con almacenamiento local:', localError);
     }
     
-    res.json(config.mappings[type]);
+    // Si se actualizaron mapeos de talleres ORs Abiertas, refrescar el pivot para aplicar cambios
+    if (type === 'orsAbiertasTalleres') {
+      try {
+        const orsPath = config?.filePaths?.orsAbiertas || configStorageService.getConfig()?.filePaths?.orsAbiertas;
+        if (orsPath?.trim()) {
+          await refreshORsPivot(orsPath);
+          console.log('✅ Pivot de ORs Abiertas actualizado con nuevos mapeos');
+        }
+      } catch (orsError) {
+        console.warn('⚠️  No se pudo refrescar pivot ORs Abiertas:', orsError.message);
+      }
+    }
+    
+    // Devolver con claves originales (desanitizar)
+    const result = config.mappings[type] ? desanitizeMappingsFromMongo(Object.fromEntries(config.mappings[type])) : {};
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

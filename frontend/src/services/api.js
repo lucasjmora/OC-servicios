@@ -307,6 +307,7 @@ export const updateConfigVentas = (data) => api.put('/config/ventas', data);
 // ===== ORs ABIERTAS =====
 
 export const getORsPivot = () => api.get('/ors-abiertas/pivot');
+export const refreshORsPivot = () => api.post('/ors-abiertas/refresh');
 
 // ===== HEALTH CHECK =====
 
