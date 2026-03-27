@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -12,22 +12,18 @@ import UnidadesParadas from './pages/UnidadesParadas';
 import Legales from './pages/Legales';
 import Estadisticas from './pages/Estadisticas';
 import ConfigActualizacion from './pages/ConfigActualizacion';
-import ConfigTalleres from './pages/ConfigTalleres';
-import ConfigUsuarios from './pages/ConfigUsuarios';
 import ConfigCampos from './pages/ConfigCampos';
-import ConfigAsistencia from './pages/ConfigAsistencia';
-import ConfigOportunidades from './pages/ConfigOportunidades';
-import ConfigAccesorios from './pages/ConfigAccesorios';
-import Diagnostico from './pages/Diagnostico';
+import ConfigParametros from './pages/ConfigParametros';
 import BotAnalyzer from './pages/BotAnalyzer';
 import BotConversation from './pages/BotConversation';
 import Ventas from './pages/Ventas';
-import ConfigVentas from './pages/ConfigVentas';
 import Objetivos from './pages/Objetivos';
 import ORsAbiertas from './pages/ORsAbiertas';
 import Reservas from './pages/Reservas';
 import Traspasos from './pages/Traspasos';
-
+import PresupCrmDashboardPage from './pages/presup-crm/PresupCrmDashboardPage';
+import PresupCrmPresupuestos from './pages/presup-crm/PresupCrmPresupuestos';
+import PresupCrmPresupuestoDetallePage from './pages/presup-crm/PresupCrmPresupuestoDetallePage';
 function App() {
   return (
     <ErrorBoundary>
@@ -50,16 +46,53 @@ function App() {
             <Route path="traspasos" element={<Traspasos />} />
             <Route path="estadisticas" element={<Estadisticas />} />
             <Route path="configuracion/actualizacion" element={<ConfigActualizacion />} />
-            <Route path="configuracion/talleres" element={<ConfigTalleres />} />
-            <Route path="configuracion/usuarios" element={<ConfigUsuarios />} />
+            <Route
+              path="configuracion/talleres"
+              element={<Navigate to="/configuracion/campos?tab=gestion-talleres" replace />}
+            />
+            <Route
+              path="configuracion/usuarios"
+              element={<Navigate to="/configuracion/campos?tab=gestion-usuarios" replace />}
+            />
             <Route path="configuracion/campos" element={<ConfigCampos />} />
-            <Route path="configuracion/asistencia" element={<ConfigAsistencia />} />
-            <Route path="configuracion/oportunidades" element={<ConfigOportunidades />} />
-            <Route path="configuracion/accesorios" element={<ConfigAccesorios />} />
-            <Route path="configuracion/ventas" element={<ConfigVentas />} />
-            <Route path="diagnostico" element={<Diagnostico />} />
+            <Route path="configuracion/parametros" element={<ConfigParametros />} />
+            <Route
+              path="configuracion/asistencia"
+              element={<Navigate to="/configuracion/parametros?tab=asistencia" replace />}
+            />
+            <Route
+              path="configuracion/oportunidades"
+              element={<Navigate to="/configuracion/parametros?tab=oportunidades" replace />}
+            />
+            <Route
+              path="configuracion/accesorios"
+              element={<Navigate to="/configuracion/parametros?tab=accesorios" replace />}
+            />
+            <Route
+              path="configuracion/ventas"
+              element={<Navigate to="/configuracion/actualizacion" replace />}
+            />
             <Route path="bot-analyzer/:empresa" element={<BotAnalyzer />} />
             <Route path="bot-analyzer/:empresa/conversation/:sessionId" element={<BotConversation />} />
+            <Route path="presup-crm/dashboard" element={<PresupCrmDashboardPage />} />
+            <Route path="presup-crm/presupuesto/:referencia" element={<PresupCrmPresupuestoDetallePage />} />
+            <Route path="presup-crm/presupuestos" element={<PresupCrmPresupuestos />} />
+            <Route
+              path="presup-crm/config/carga"
+              element={<Navigate to="/configuracion/actualizacion" replace />}
+            />
+            <Route
+              path="presup-crm/config/talleres"
+              element={<Navigate to="/configuracion/campos?tab=talleres-presup" replace />}
+            />
+            <Route
+              path="presup-crm/config/aceites"
+              element={<Navigate to="/configuracion/parametros?tab=presupuestos" replace />}
+            />
+            <Route
+              path="presup-crm/config/general"
+              element={<Navigate to="/configuracion/parametros?tab=presupuestos" replace />}
+            />
           </Route>
         </Routes>
       </BrowserRouter>

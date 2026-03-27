@@ -9,6 +9,49 @@ const router = express.Router();
 
 const escapeRegex = (str) => String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Condiciones $or para búsqueda general (ID, cliente, vehículo, titular, origen, etc.) */
+function buildBoletoTextSearchConditions(rawSearch) {
+  const trimmed = String(rawSearch || '').trim();
+  if (!trimmed) return null;
+  const q = escapeRegex(trimmed);
+  const rx = { $regex: q, $options: 'i' };
+  return [
+    { id: rx },
+    { 'datosBoleto.ref': rx },
+    { 'datosBoleto.cliente': rx },
+    { 'datosBoleto.matricula': rx },
+    { 'datosBoleto.modelo': rx },
+    { 'datosBoleto.marca': rx },
+    { 'datosBoleto.empresa': rx },
+    { 'datosBoleto.salesConsultant': rx },
+    { 'datosBoleto.typeOfSale': rx },
+    { 'datosBoleto.status': rx },
+    { 'datosBoleto.vehicleId.Brand': rx },
+    { 'datosBoleto.vehicleId.Model': rx },
+    { 'datosBoleto.vehicleId.Domain': rx },
+    { 'datosBoleto.vehicleId.ChassisNumber': rx },
+    { 'datosBoleto.origen.city': rx },
+    { 'datosBoleto.origen.ciudad': rx },
+    { 'datosBoleto.origen.company': rx },
+    { 'datosBoleto.origen.province': rx },
+    { 'datosBoleto.origen.address': rx },
+    { 'datosBoleto.origen.brand': rx },
+    {
+      'datosBoleto.ownerIds': {
+        $elemMatch: {
+          $or: [
+            { Name: rx },
+            { LastName: rx },
+            { Email: rx },
+            { Tel: rx },
+            { CuilCuit: rx }
+          ]
+        }
+      }
+    }
+  ];
+}
+
 // Obtener lista de boletos con filtros y paginación
 router.get('/', async (req, res) => {
   try {
@@ -133,15 +176,9 @@ router.get('/', async (req, res) => {
       }
     }
     
-    // Búsqueda de texto en id y datosBoleto
-    if (search) {
-      const searchConditions = [
-        { id: { $regex: search, $options: 'i' } },
-        { 'datosBoleto.cliente': { $regex: search, $options: 'i' } },
-        { 'datosBoleto.matricula': { $regex: search, $options: 'i' } },
-        { 'datosBoleto.modelo': { $regex: search, $options: 'i' } }
-      ];
-      
+    // Búsqueda general: id, titular (ownerIds), vehículo, origen, ref, consultor, etc.
+    const searchConditions = buildBoletoTextSearchConditions(search);
+    if (searchConditions) {
       if (filters.$or) {
         filters.$and = filters.$and || [];
         filters.$and.push({ $or: filters.$or });

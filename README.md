@@ -31,6 +31,14 @@ npm run dev
    - **Archivo de Ingresos:** Ruta a tu archivo Excel de ingresos
 2. Haz clic en **"Importar datos ahora"**
 
+## 📊 CRM Presupuestos (módulo integrado)
+
+- **API:** prefijo `/api/presup-crm` (config, dashboard, listado, importación Excel, talleres, aceites).
+- **Rutas UI:** `/presup-crm/presupuestos`, `/presup-crm/dashboard`, `/presup-crm/config/*` (general, talleres, aceites, carga).
+- **Dashboard principal:** pestaña **“Presupuestos (CRM)”** junto al resumen OC Servicios.
+- **Menú:** CRM → Presupuestos; Configuración → **Parámetros de presupuestos** (no confundir con “Actualización de datos” de citas/ingresos).
+- La configuración del módulo se guarda en el documento `configuracion` (campo `presupCrm`) y en `data/config.json` bajo `presupCrm`.
+
 ## 📊 Funcionalidades
 
 - **Dashboard:** Resumen del sistema

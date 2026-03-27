@@ -26,6 +26,7 @@ import boletosRoutes from './routes/boletos.js';
 import botAnalyzerRoutes from './routes/botAnalyzer.js';
 import ventasRoutes from './routes/ventas.js';
 import orsAbiertasRoutes from './routes/orsAbiertas.js';
+import presupCrmRoutes from './routes/presupCrm.js';
 
 // Importar servicios
 // // import { startScheduler } from './services/schedulerService.js';
@@ -33,8 +34,9 @@ import { startBoletosScheduler } from './services/boletosSchedulerService.js';
 import Configuracion from './models/Configuracion.js';
 import configStorageService from './services/configStorageService.js';
 
-// Cargar variables de entorno
-dotenv.config();
+// Cargar variables de entorno: raíz del repo (oc-servicios/.env) y opcional backend/.env
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -67,6 +69,7 @@ app.use('/api/boletos', boletosRoutes);
 app.use('/api/bot-analyzer', botAnalyzerRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/ors-abiertas', orsAbiertasRoutes);
+app.use('/api/presup-crm', presupCrmRoutes);
 
 // Ruta de health check
 app.get('/api/health', (req, res) => {
@@ -152,6 +155,9 @@ async function connectDB() {
           }
           if (config.oportunidades) {
             await configStorageService.updateOportunidades(config.oportunidades);
+          }
+          if (config.presupCrm) {
+            await configStorageService.updatePresupCrm(config.presupCrm);
           }
           
           // Iniciar scheduler si está habilitado

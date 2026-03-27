@@ -1,5 +1,7 @@
 {
   "mongodb": {
+    "uri": "mongodb+srv://lucasjmora:rUAhjnEbxWJXv9nY@lm-mongodb.mw28zss.mongodb.net/oc_servicios?retryWrites=true&w=majority",
+    "database": "oc_servicios",
     "collections": {
       "citas": "citas",
       "ingresos": "ingresos"
@@ -8,12 +10,11 @@
   "filePaths": {
     "citas": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx",
     "ingresos": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx",
-    "orsAbiertas": "C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\ORs.xlsx",
-    "presupuestos": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Presup_taller\\U72.xlsx"
+    "orsAbiertas": "C:\\Users\\Administrator\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\ORs.xlsx"
   },
   "scheduler": {
     "enabled": false,
-    "cronExpression": "0 */6 * * *",
+    "cronExpression": "0 0 */6 * *",
     "lastRun": null,
     "nextRun": null
   },
@@ -62,15 +63,14 @@
       "GRANVILLE - JUNIN": "GV JU",
       "GRANVILLE - PERGAMINO": "GV PE",
       "GRANVILLE - SAN NICOLAS": "GV SN",
-      "GRANVILLE -CITROEN TRELEW": "GV TW",
-      "GRANVILLE -PEUGEOT TRELEW": "GV TW",
-      "GRANVILLE-CITROEN BELGRANO MADRYN": "GV PM",
-      "GRANVILLE-CITROEN COMODOR": "GV CO",
+      "GRANVILLE -CITROEN TRELEW": "GV CI TW",
+      "GRANVILLE -PEUGEOT TRELEW": "GV PE TW",
+      "GRANVILLE-CITROEN BELGRANO MADRYN": "GV CI PM",
+      "GRANVILLE-CITROEN COMODOR": "GV CI CO",
       "GRANVILLE-PEUGEOT BELGRANO MADRYN": "GV PE PM",
-      "GRANVILLE-PEUGEOT COMODOR": "GV CO",
+      "GRANVILLE-PEUGEOT COMODOR": "GV PE CO",
       "PAMPAWAGEN - GENERAL PICO": "PW GP",
-      "PAMPAWAGEN - SANTA ROSA": "PW SR",
-      "__DOT__GRANVILLE-PEUGEOT BELGRANO MADRYN": "GV PM"
+      "PAMPAWAGEN - SANTA ROSA": "PW SR"
     }
   },
   "asistencia": {
@@ -79,7 +79,7 @@
   "lastImport": null,
   "createdAt": "2025-10-11T03:30:40.776Z",
   "updatedAt": "2025-10-11T03:30:40.776Z",
-  "lastUpdated": "2026-03-27T00:29:48.087Z",
+  "lastUpdated": "2026-03-17T20:41:49.240Z",
   "version": "1.0.0",
   "oportunidades": {
     "palabrasClave": "serv",
@@ -139,31 +139,6 @@
       "Chivilcoy|CHEVROLET": "FC CH",
       "Pergamino|PEUGEOT": "GV PE",
       "San Nicolás de los Arroyos|PEUGEOT": "GV SN"
-    }
-  },
-  "presupCrm": {
-    "mongodb": {
-      "uri": "",
-      "database": "Presupuestos",
-      "collection": "presup_taller",
-      "collectionTalleres": "talleres"
-    },
-    "excel": {
-      "filePath": "",
-      "sheetName": "Informe"
-    },
-    "scheduler": {
-      "enabled": false,
-      "cronExpression": "0 */6 * * *"
-    },
-    "talleres": [],
-    "aceites": [],
-    "general": {},
-    "lastImport": {
-      "timestamp": "2026-03-27T00:17:02.747Z",
-      "status": "success",
-      "rows": 1751,
-      "error": null
     }
   }
 }

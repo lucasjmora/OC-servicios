@@ -1,7 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { FaTags, FaSave, FaWarehouse } from 'react-icons/fa';
+import { FaTags, FaSave, FaWarehouse, FaUsers } from 'react-icons/fa';
 import { getMappings, updateMappings, getORsPivot } from '../services/api';
+import PresupCrmConfigTalleres from './presup-crm/PresupCrmConfigTalleres';
+import ConfigTalleresPanel from '../components/ConfigTalleresPanel';
+import ConfigUsuariosPanel from '../components/ConfigUsuariosPanel';
+
+const VALID_TABS = ['citas', 'ingresos', 'gestion-talleres', 'gestion-usuarios', 'orsAbiertas', 'talleres-presup'];
+
+function tabFromSearchParams(sp) {
+  const t = sp.get('tab');
+  if (t && VALID_TABS.includes(t)) return t;
+  return 'citas';
+}
 
 // Campos predefinidos de las colecciones
 const CAMPOS_CITAS = [
@@ -28,7 +40,16 @@ const ConfigCampos = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState('citas');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = useMemo(() => tabFromSearchParams(searchParams), [searchParams]);
+
+  const selectTab = useCallback(
+    (tab) => {
+      if (tab === 'citas') setSearchParams({});
+      else setSearchParams({ tab });
+    },
+    [setSearchParams]
+  );
 
   useEffect(() => {
     loadMappings();
@@ -168,7 +189,7 @@ const ConfigCampos = () => {
     <div className="p-8">
       <PageHeader 
         title="Mapeo de Campos" 
-        subtitle="Personaliza los nombres de los campos mostrados en la interfaz"
+        subtitle="Personaliza nombres de campos, talleres, usuarios citas/ingresos, ORs abiertas y catálogo Presup"
         action={
           <button
             onClick={handleSaveMappings}
@@ -192,9 +213,10 @@ const ConfigCampos = () => {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-gray-700">
+      <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-700">
         <button
-          onClick={() => setActiveTab('citas')}
+          type="button"
+          onClick={() => selectTab('citas')}
           className={`px-6 py-3 font-semibold transition-colors ${
             activeTab === 'citas'
               ? 'text-primary border-b-2 border-primary'
@@ -208,7 +230,8 @@ const ConfigCampos = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('ingresos')}
+          type="button"
+          onClick={() => selectTab('ingresos')}
           className={`px-6 py-3 font-semibold transition-colors ${
             activeTab === 'ingresos'
               ? 'text-primary border-b-2 border-primary'
@@ -222,7 +245,38 @@ const ConfigCampos = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('orsAbiertas')}
+          type="button"
+          onClick={() => selectTab('gestion-talleres')}
+          className={`px-6 py-3 font-semibold transition-colors ${
+            activeTab === 'gestion-talleres'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FaWarehouse />
+            taller citas/ingresos
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => selectTab('gestion-usuarios')}
+          className={`px-6 py-3 font-semibold transition-colors ${
+            activeTab === 'gestion-usuarios'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FaUsers />
+            usuarios citas/ingresos
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => selectTab('orsAbiertas')}
           className={`px-6 py-3 font-semibold transition-colors ${
             activeTab === 'orsAbiertas'
               ? 'text-primary border-b-2 border-primary'
@@ -232,6 +286,21 @@ const ConfigCampos = () => {
           <div className="flex items-center gap-2">
             <FaWarehouse />
             Nombres de taller ORs Abiertas ({loadingOrs ? '...' : talleresOrs.length})
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => selectTab('talleres-presup')}
+          className={`px-6 py-3 font-semibold transition-colors ${
+            activeTab === 'talleres-presup'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FaWarehouse />
+            Talleres presup
           </div>
         </button>
       </div>
@@ -245,6 +314,16 @@ const ConfigCampos = () => {
         <>
           {activeTab === 'citas' && renderCamposTable(CAMPOS_CITAS, mappingsCitas, 'citas')}
           {activeTab === 'ingresos' && renderCamposTable(CAMPOS_INGRESOS, mappingsIngresos, 'ingresos')}
+          {activeTab === 'gestion-talleres' && (
+            <div className="bg-background-card border border-gray-700 rounded-lg p-6">
+              <ConfigTalleresPanel embedded />
+            </div>
+          )}
+          {activeTab === 'gestion-usuarios' && (
+            <div className="bg-background-card border border-gray-700 rounded-lg p-6">
+              <ConfigUsuariosPanel embedded />
+            </div>
+          )}
           {activeTab === 'orsAbiertas' && (
             loadingOrs ? (
               <div className="flex justify-center items-center py-12">
@@ -260,6 +339,16 @@ const ConfigCampos = () => {
             ) : (
               renderCamposTable(talleresOrs, mappingsOrsTalleres, 'orsAbiertas')
             )
+          )}
+          {activeTab === 'talleres-presup' && (
+            <div className="bg-background-card border border-gray-700 rounded-lg p-6">
+              <p className="text-sm text-gray-400 mb-4">
+                Catálogo en la colección MongoDB <strong className="text-gray-300">talleres</strong> (base{' '}
+                <strong className="text-gray-300">Presupuestos</strong>, mismo cluster que los presupuestos). Códigos del
+                Excel y etiquetas para listado y dashboard (Presup CRM).
+              </p>
+              <PresupCrmConfigTalleres embedded />
+            </div>
           )}
         </>
       )}

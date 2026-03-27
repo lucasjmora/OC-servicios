@@ -3,7 +3,7 @@ import { getConfigOportunidades, updateConfigOportunidades } from '../services/a
 import PageHeader from '../components/PageHeader';
 import { FaLightbulb, FaSave, FaInfoCircle } from 'react-icons/fa';
 
-const ConfigOportunidades = () => {
+const ConfigOportunidades = ({ embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -100,12 +100,14 @@ const ConfigOportunidades = () => {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <PageHeader 
-          title="Parámetros de Oportunidades" 
-          subtitle="Configurar criterios de búsqueda"
-          icon={<FaLightbulb className="text-yellow-400" />}
-        />
+      <div className={embedded ? '' : 'p-8'}>
+        {!embedded && (
+          <PageHeader
+            title="Parámetros de Oportunidades"
+            subtitle="Configurar criterios de búsqueda"
+            icon={<FaLightbulb className="text-yellow-400" />}
+          />
+        )}
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
@@ -114,12 +116,14 @@ const ConfigOportunidades = () => {
   }
 
   return (
-    <div className="p-8">
-      <PageHeader 
-        title="Parámetros de Oportunidades" 
-        subtitle="Configurar criterios de búsqueda para oportunidades de seguimiento"
-        icon={<FaLightbulb className="text-yellow-400" />}
-      />
+    <div className={embedded ? '' : 'p-8'}>
+      {!embedded && (
+        <PageHeader
+          title="Parámetros de Oportunidades"
+          subtitle="Configurar criterios de búsqueda para oportunidades de seguimiento"
+          icon={<FaLightbulb className="text-yellow-400" />}
+        />
+      )}
 
       {/* Mensaje de información */}
       <div className="mb-6 p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">

@@ -22,7 +22,9 @@ const configuracionSchema = new mongoose.Schema({
   filePaths: {
     citas: String,
     ingresos: String,
-    orsAbiertas: String
+    orsAbiertas: String,
+    /** Presup CRM — se sincroniza con presupCrm.excel.filePath (primera hoja del Excel, como el resto). */
+    presupuestos: String
   },
   
   // Configuración del scheduler
@@ -84,13 +86,73 @@ const configuracionSchema = new mongoose.Schema({
   lastImport: {
     timestamp: Date,
     status: String, // 'success', 'error', 'in_progress'
+    duration: Number,
     summary: {
       citasNuevas: { type: Number, default: 0 },
       citasActualizadas: { type: Number, default: 0 },
       ingresosNuevos: { type: Number, default: 0 },
-      ingresosActualizados: { type: Number, default: 0 }
+      ingresosActualizados: { type: Number, default: 0 },
+      boletosNuevos: { type: Number, default: 0 },
+      boletosActualizados: { type: Number, default: 0 },
+      totalRegistros: { type: Number, default: 0 },
+      asistenciaCalculada: mongoose.Schema.Types.Mixed,
+      ventasProcesadas: mongoose.Schema.Types.Mixed,
+      /** Primeras N operaciones con cambios por campo (ver importService) */
+      detalleCitas: mongoose.Schema.Types.Mixed,
+      detalleIngresos: mongoose.Schema.Types.Mixed,
+      detalleCitasTruncado: { type: Boolean, default: false },
+      detalleIngresosTruncado: { type: Boolean, default: false }
     },
     error: String
+  },
+
+  /** Snapshot de la última importación OK (stats + detalle; Mixed para no perder campos) */
+  lastSuccessfulImport: mongoose.Schema.Types.Mixed,
+
+  /** Última actualización por módulo (importación granular o manual completa) */
+  lastImportByModule: {
+    ventas: Date,
+    citas: Date,
+    ingresos: Date,
+    /** Sincronización desde API de boletos (accesorios) */
+    boletos: Date,
+    orsAbiertas: Date,
+    presupuestos: Date
+  },
+
+  // CRM Presupuestos (OC Presup) — aislado de citas/ingresos
+  presupCrm: {
+    mongodb: {
+      uri: { type: String, default: '' },
+      database: { type: String, default: 'Presupuestos' },
+      collection: { type: String, default: 'presup_taller' },
+      /** Catálogo talleres Presup CRM (misma BD): por defecto `talleres`. */
+      collectionTalleres: { type: String, default: 'talleres' }
+    },
+    excel: {
+      filePath: { type: String, default: '' }
+    },
+    scheduler: {
+      enabled: { type: Boolean, default: false },
+      cronExpression: { type: String, default: '0 */6 * * *' }
+    },
+    talleres: [{
+      codigo: String,
+      nombre: String,
+      activo: { type: Boolean, default: true }
+    }],
+    aceites: [{
+      codigo: String,
+      descripcion: String,
+      precio: { type: Number, default: 0 }
+    }],
+    general: { type: mongoose.Schema.Types.Mixed, default: {} },
+    lastImport: {
+      timestamp: Date,
+      status: String,
+      rows: { type: Number, default: 0 },
+      error: String
+    }
   }
 }, {
   timestamps: true,

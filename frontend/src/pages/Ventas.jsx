@@ -472,8 +472,8 @@ const Ventas = () => {
               </p>
               <p className="text-sm text-gray-500 mt-2">
                 {meses.length === 0 
-                  ? "Configure los parámetros de ventas en Configuración → Parámetros Ventas y ejecute una importación para procesar los datos"
-                  : "Los datos de ventas para este mes están vacíos. Asegúrese de que los archivos estén configurados correctamente y ejecute el procesamiento de ventas desde Configuración → Parámetros Ventas"
+                  ? "Defina FILE_PATH_VENTAS_CTAS_PV y FILE_PATH_VENTAS_BALANCES en el .env del servidor y ejecute «Actualizar ahora» en Configuración → Actualización de datos."
+                  : "Los datos de ventas para este mes están vacíos. Compruebe las rutas en el .env y vuelva a importar desde Actualización de datos."
                 }
               </p>
             </div>

@@ -2,6 +2,7 @@ import express from 'express';
 import { getORsPivot, refreshORsPivot } from '../services/orsAbiertasService.js';
 import Configuracion from '../models/Configuracion.js';
 import configStorageService from '../services/configStorageService.js';
+import { applyEnvConfigOverrides } from '../services/envConfig.js';
 
 const router = express.Router();
 
@@ -14,10 +15,14 @@ router.post('/refresh', async (req, res) => {
     let orsPath = null;
     try {
       const config = await Configuracion.findOne({ singleton: true });
-      orsPath = config?.filePaths?.orsAbiertas;
+      const plain =
+        config && typeof config.toObject === 'function'
+          ? config.toObject({ flattenMaps: true })
+          : JSON.parse(JSON.stringify(config || {}));
+      orsPath = applyEnvConfigOverrides(plain || {}).filePaths?.orsAbiertas;
     } catch {
       if (configStorageService.isInitialized) {
-        orsPath = configStorageService.getConfig()?.filePaths?.orsAbiertas;
+        orsPath = configStorageService.getEffectiveConfig()?.filePaths?.orsAbiertas;
       }
     }
     if (!orsPath?.trim()) {

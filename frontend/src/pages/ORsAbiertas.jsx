@@ -73,6 +73,25 @@ const ORsAbiertas = () => {
 
   const filtersActive = filterTaller.length > 0 || filterTipo.length > 0;
 
+  const parseOrderAmount = (v) => {
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+    if (v === null || v === undefined || v === '' || v === '-') return 0;
+    const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
+    return Number.isNaN(n) ? 0 : n;
+  };
+
+  const columnTotals = filteredOrders.reduce(
+    (acc, o) => ({
+      mo: acc.mo + parseOrderAmount(o.manoObra),
+      rep: acc.rep + parseOrderAmount(o.totalMaterial),
+      tot: acc.tot + parseOrderAmount(o.subarrenda),
+      total: acc.total + parseOrderAmount(o.base)
+    }),
+    { mo: 0, rep: 0, tot: 0, total: 0 }
+  );
+
+  const formatTotalCell = (n) => n.toLocaleString('es-AR');
+
   const handleSort = (col) => {
     if (sortBy !== col) {
       setSortBy(col);
@@ -411,6 +430,28 @@ const ORsAbiertas = () => {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot className="sticky bottom-0 bg-gray-800/95 border-t border-gray-600">
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-2 py-2 text-xs font-semibold text-gray-300 text-right uppercase tracking-wide"
+                    >
+                      Total
+                    </td>
+                    <td className="px-2 py-2 text-sm font-semibold text-white text-right tabular-nums">
+                      {formatTotalCell(columnTotals.mo)}
+                    </td>
+                    <td className="px-2 py-2 text-sm font-semibold text-white text-right tabular-nums">
+                      {formatTotalCell(columnTotals.rep)}
+                    </td>
+                    <td className="px-2 py-2 text-sm font-semibold text-white text-right tabular-nums">
+                      {formatTotalCell(columnTotals.tot)}
+                    </td>
+                    <td className="px-2 py-2 text-sm font-semibold text-primary text-right tabular-nums">
+                      {formatTotalCell(columnTotals.total)}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
             <div className="px-2 py-2 text-xs text-gray-500 border-t border-gray-700 flex-shrink-0">

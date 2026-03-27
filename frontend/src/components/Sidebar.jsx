@@ -10,9 +10,7 @@ import {
   FaChevronRight,
   FaDatabase,
   FaWarehouse,
-  FaUsers,
   FaTags,
-  FaStethoscope,
   FaEye,
   FaCheckCircle,
   FaLightbulb,
@@ -26,7 +24,9 @@ import {
   FaBriefcase,
   FaFileInvoice,
   FaCalendarCheck,
-  FaExchangeAlt
+  FaExchangeAlt,
+  FaFileAlt,
+  FaSlidersH
 } from 'react-icons/fa';
 
 const Sidebar = () => {
@@ -35,7 +35,6 @@ const Sidebar = () => {
   const [crmExpanded, setCrmExpanded] = useState(false);
   const [mktExpanded, setMktExpanded] = useState(false);
   const [gestionCasosExpanded, setGestionCasosExpanded] = useState(false);
-
   const navLinkClass = ({ isActive }) =>
     `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
       isActive
@@ -163,6 +162,11 @@ const Sidebar = () => {
                 <FaCheckCircle className="text-xs" />
                 <span>Accesorios</span>
               </NavLink>
+
+              <NavLink to="/presup-crm/presupuestos" className={subNavLinkClass}>
+                <FaFileAlt className="text-xs" />
+                <span>Presupuestos</span>
+              </NavLink>
             </div>
           )}
         </div>
@@ -253,44 +257,14 @@ const Sidebar = () => {
                 <span>Actualización de datos</span>
               </NavLink>
 
-              <NavLink to="/configuracion/talleres" className={subNavLinkClass}>
-                <FaWarehouse className="text-xs" />
-                <span>Gestión Talleres</span>
-              </NavLink>
-
-              <NavLink to="/configuracion/usuarios" className={subNavLinkClass}>
-                <FaUsers className="text-xs" />
-                <span>Gestión Usuarios</span>
-              </NavLink>
-
               <NavLink to="/configuracion/campos" className={subNavLinkClass}>
                 <FaTags className="text-xs" />
                 <span>Mapeo de Campos</span>
               </NavLink>
 
-              <NavLink to="/configuracion/asistencia" className={subNavLinkClass}>
-                <FaCheckCircle className="text-xs" />
-                <span>Parámetros de Asistencia</span>
-              </NavLink>
-
-              <NavLink to="/configuracion/oportunidades" className={subNavLinkClass}>
-                <FaLightbulb className="text-xs" />
-                <span>Parámetros de Oportunidades</span>
-              </NavLink>
-
-              <NavLink to="/configuracion/accesorios" className={subNavLinkClass}>
-                <FaCheckCircle className="text-xs" />
-                <span>Parámetros de Accesorios</span>
-              </NavLink>
-
-              <NavLink to="/configuracion/ventas" className={subNavLinkClass}>
-                <FaDollarSign className="text-xs" />
-                <span>Parámetros Ventas</span>
-              </NavLink>
-
-              <NavLink to="/diagnostico" className={subNavLinkClass}>
-                <FaStethoscope className="text-xs" />
-                <span>Diagnóstico</span>
+              <NavLink to="/configuracion/parametros" className={subNavLinkClass}>
+                <FaSlidersH className="text-xs" />
+                <span>Parámetros</span>
               </NavLink>
 
               <NavLink to="/citas" className={subNavLinkClass}>

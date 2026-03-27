@@ -3,7 +3,7 @@ import { getConfig, updateConfigAsistencia } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import { FaSave, FaInfoCircle } from 'react-icons/fa';
 
-const ConfigAsistencia = () => {
+const ConfigAsistencia = ({ embedded = false }) => {
   const [config, setConfig] = useState({
     diasTolerancia: 3
   });
@@ -64,8 +64,8 @@ const ConfigAsistencia = () => {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <PageHeader title="Configuración de Asistencia" />
+      <div className={embedded ? '' : 'p-8'}>
+        {!embedded && <PageHeader title="Configuración de Asistencia" />}
         <div className="bg-background-card border border-gray-700 rounded-lg p-8">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -77,11 +77,13 @@ const ConfigAsistencia = () => {
   }
 
   return (
-    <div className="p-8">
-      <PageHeader 
-        title="Configuración de Asistencia" 
-        subtitle="Parámetros para la detección de no asistencia"
-      />
+    <div className={embedded ? '' : 'p-8'}>
+      {!embedded && (
+        <PageHeader
+          title="Configuración de Asistencia"
+          subtitle="Parámetros para la detección de no asistencia"
+        />
+      )}
 
       <div className="bg-background-card border border-gray-700 rounded-lg p-6">
         <div className="max-w-2xl mx-auto">

@@ -74,6 +74,63 @@ Con código de estado HTTP `401 Unauthorized`.
 
 ---
 
+## 📦 Formato de la respuesta
+
+El servidor puede devolver:
+
+- Un **array** de boletos directamente, o
+- Un objeto con **`bookings`** (array) o **`data`** (array), o
+- Un **único objeto** boleto.
+
+OC Servicios normaliza eso en `backend/services/boletosService.js` al sincronizar.
+
+### Claves de primer nivel (muestra en vivo)
+
+Generado con `node backend/scripts/fetch-booking-sample.mjs` (requiere `BOLETOS_PAT` en `backend/.env`). Sobre una página de resultados `VN`, las claves observadas en **todos** los ítems de la muestra fueron:
+
+| Clave | Tipo (resumen) |
+| ----- | -------------- |
+| `_id` | string (ObjectId en hex) |
+| `ownerIds` | array de objetos (titular) |
+| `vehicleId` | objeto (vehículo) |
+| `salesConsultant` | string |
+| `status` | string (estado del boleto en origen) |
+| `origen` | objeto (taller / ubicación) |
+| `typeOfSale` | string (ej. `VN`) |
+| `createdAt` | string (fecha/hora creación) |
+| `ref` | string *(no en todos los registros; aparece en algunos ítems del mismo lote)* |
+
+### Estructura anidada típica
+
+**`ownerIds[]`** (primer elemento):
+
+- `_id`, `Name`, `LastName`, `CuilCuit`, `Email`, `Tel`
+
+**`vehicleId`**:
+
+- `_id`, `Brand`, `Model`, `Domain`, `ChassisNumber`
+
+**`origen`**:
+
+- `_id`, `city`, `province`, `brand`, `company`, `address`, `boss`, `createdAt`, `updatedAt`, `__v`
+
+### Identificador para integraciones
+
+Para unificar con Mongo, el backend acepta como ID de boleto: `id`, `_id` o `bookingId` si el API los envía. En la muestra anterior predominaba **`_id`** como string.
+
+### Actualizar esta lista
+
+Si el API agrega campos, volvé a ejecutar:
+
+```bash
+cd backend
+node scripts/fetch-booking-sample.mjs
+```
+
+El script imprime JSON con la unión de claves de primer nivel y una descripción superficial de objetos anidados.
+
+---
+
 ## 📏 Reglas importantes
 
 1. Podés usar:

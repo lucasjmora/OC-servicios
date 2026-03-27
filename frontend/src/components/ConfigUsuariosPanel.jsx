@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { getMappings, updateMappings, getUniqueValues } from '../services/api';
-import PageHeader from '../components/PageHeader';
 import { FaUsers, FaCheckCircle, FaExclamationTriangle, FaSave, FaSearch } from 'react-icons/fa';
 
-const ConfigUsuarios = () => {
+/**
+ * Mapeo código de usuario (campo Usuario en citas) → nombre legible.
+ * Usado dentro de Mapeo de Campos (solapa) o redirección desde /configuracion/usuarios.
+ */
+export default function ConfigUsuariosPanel({ embedded = false }) {
   const [usuariosCodigos, setUsuariosCodigos] = useState([]);
   const [mappings, setMappings] = useState({});
   const [loading, setLoading] = useState(true);
@@ -12,31 +15,31 @@ const ConfigUsuarios = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const [citasRes, mappingsRes] = await Promise.all([
+          getUniqueValues('citas', 'Usuario'),
+          getMappings('usuarios')
+        ]);
+        if (cancelled) return;
+        setUsuariosCodigos((citasRes.data || []).sort());
+        setMappings(mappingsRes.data || {});
+      } catch (error) {
+        console.error('Error cargando usuarios:', error);
+        if (!cancelled) setMessage({ type: 'error', text: 'Error cargando datos de usuarios' });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      
-      // Obtener códigos únicos de usuarios desde citas
-      const [citasRes, mappingsRes] = await Promise.all([
-        getUniqueValues('citas', 'Usuario'),
-        getMappings('usuarios')
-      ]);
-      
-      setUsuariosCodigos(citasRes.data.sort());
-      setMappings(mappingsRes.data || {});
-    } catch (error) {
-      console.error('Error cargando usuarios:', error);
-      setMessage({ type: 'error', text: 'Error cargando datos de usuarios' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleMappingChange = (codigo, nombre) => {
-    setMappings(prev => ({
+    setMappings((prev) => ({
       ...prev,
       [codigo]: nombre
     }));
@@ -48,17 +51,17 @@ const ConfigUsuarios = () => {
       await updateMappings('usuarios', mappings);
       setMessage({ type: 'success', text: 'Mapeos de usuarios guardados correctamente' });
       setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: 'Error guardando mapeos' });
     } finally {
       setSaving(false);
     }
   };
 
-  const configurados = usuariosCodigos.filter(codigo => mappings[codigo]);
-  const sinConfigurar = usuariosCodigos.filter(codigo => !mappings[codigo]);
+  const configurados = usuariosCodigos.filter((codigo) => mappings[codigo]);
+  const sinConfigurar = usuariosCodigos.filter((codigo) => !mappings[codigo]);
 
-  const filteredCodigos = usuariosCodigos.filter(codigo => {
+  const filteredCodigos = usuariosCodigos.filter((codigo) => {
     if (!searchTerm) return true;
     const codigoStr = String(codigo).toLowerCase();
     const nombre = mappings[codigo]?.toLowerCase() || '';
@@ -67,9 +70,9 @@ const ConfigUsuarios = () => {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className={embedded ? 'py-8' : 'p-8'}>
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
           <p className="mt-4 text-gray-400">Cargando usuarios...</p>
         </div>
       </div>
@@ -77,12 +80,15 @@ const ConfigUsuarios = () => {
   }
 
   return (
-    <div className="p-8">
-      <PageHeader 
-        title="Gestión de Usuarios" 
-        subtitle="Configura los códigos y nombres de los usuarios"
-        action={
+    <div className={embedded ? '' : 'p-8'}>
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Gestión de Usuarios</h1>
+            <p className="text-gray-400 mt-1">Configura los códigos y nombres de los usuarios</p>
+          </div>
           <button
+            type="button"
             onClick={handleSaveMappings}
             disabled={saving}
             className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors font-semibold flex items-center gap-2"
@@ -90,20 +96,40 @@ const ConfigUsuarios = () => {
             <FaSave />
             {saving ? 'Guardando...' : 'Guardar Todos'}
           </button>
-        }
-      />
+        </div>
+      )}
+
+      {embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <p className="text-sm text-gray-400 max-w-3xl">
+            Códigos del campo <strong className="text-gray-300">Usuario</strong> en la colección{' '}
+            <strong className="text-gray-300">citas</strong>. El nombre se usa en listados, dashboard (p. ej. Martina)
+            y métricas.
+          </p>
+          <button
+            type="button"
+            onClick={handleSaveMappings}
+            disabled={saving}
+            className="shrink-0 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors font-semibold flex items-center gap-2"
+          >
+            <FaSave />
+            {saving ? 'Guardando...' : 'Guardar usuarios'}
+          </button>
+        </div>
+      )}
 
       {message && (
-        <div className={`mb-6 p-4 rounded-lg border fade-in ${
-          message.type === 'success' 
-            ? 'bg-status-success/10 border-status-success text-status-success' 
-            : 'bg-status-danger/10 border-status-danger text-status-danger'
-        }`}>
+        <div
+          className={`mb-6 p-4 rounded-lg border fade-in ${
+            message.type === 'success'
+              ? 'bg-status-success/10 border-status-success text-status-success'
+              : 'bg-status-danger/10 border-status-danger text-status-danger'
+          }`}
+        >
           {message.text}
         </div>
       )}
 
-      {/* Estadísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div className="bg-background-card border border-gray-700 rounded-lg p-6">
           <div className="flex items-center justify-between">
@@ -136,7 +162,6 @@ const ConfigUsuarios = () => {
         </div>
       </div>
 
-      {/* Buscador */}
       <div className="mb-6">
         <div className="relative">
           <input
@@ -150,7 +175,6 @@ const ConfigUsuarios = () => {
         </div>
       </div>
 
-      {/* Lista de usuarios */}
       <div className="bg-background-card border border-gray-700 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -171,9 +195,7 @@ const ConfigUsuarios = () => {
               {filteredCodigos.map((codigo) => (
                 <tr key={codigo} className="hover:bg-gray-800/50 transition-colors">
                   <td className="px-4 py-3">
-                    <span className="font-mono text-sm text-primary font-semibold">
-                      {codigo}
-                    </span>
+                    <span className="font-mono text-sm text-primary font-semibold">{codigo}</span>
                   </td>
                   <td className="px-4 py-3">
                     <input
@@ -211,10 +233,4 @@ const ConfigUsuarios = () => {
       )}
     </div>
   );
-};
-
-export default ConfigUsuarios;
-
-
-
-
+}

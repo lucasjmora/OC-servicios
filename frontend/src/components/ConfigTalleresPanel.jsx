@@ -1,57 +1,47 @@
 import { useEffect, useState } from 'react';
 import { getMappings, updateMappings, getUniqueValues } from '../services/api';
-import PageHeader from '../components/PageHeader';
 import { FaWarehouse, FaCheckCircle, FaExclamationTriangle, FaSave, FaSearch } from 'react-icons/fa';
 
-const ConfigTalleres = () => {
+/**
+ * Mapeo código de taller (citas/ingresos) → nombre corto.
+ * Usado dentro de Mapeo de Campos (solapa) o pantalla legacy con redirect.
+ */
+export default function ConfigTalleresPanel({ embedded = false }) {
   const [talleresCodigos, setTalleresCodigos] = useState([]);
   const [mappings, setMappings] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const [citasRes, ingresosRes, mappingsRes] = await Promise.all([
+          getUniqueValues('citas', 'Taller'),
+          getUniqueValues('ingresos', 'Taller'),
+          getMappings('talleres')
+        ]);
+        if (cancelled) return;
+        const allCodigos = new Set([...citasRes.data, ...ingresosRes.data]);
+        setTalleresCodigos(Array.from(allCodigos).sort());
+        setMappings(mappingsRes.data || {});
+      } catch (error) {
+        console.error('Error cargando talleres:', error);
+        if (!cancelled) setMessage({ type: 'error', text: 'Error cargando datos de talleres' });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadData = async () => {
-    if (dataLoaded) {
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      
-      // Obtener códigos únicos de talleres desde ambas colecciones
-      const [citasRes, ingresosRes, mappingsRes] = await Promise.all([
-        getUniqueValues('citas', 'Taller'),
-        getUniqueValues('ingresos', 'Taller'),
-        getMappings('talleres')
-      ]);
-      
-      // Combinar códigos únicos
-      const allCodigos = new Set([
-        ...citasRes.data,
-        ...ingresosRes.data
-      ]);
-      
-      const codigosArray = Array.from(allCodigos).sort();
-      
-      setTalleresCodigos(codigosArray);
-      setMappings(mappingsRes.data || {});
-      setDataLoaded(true);
-    } catch (error) {
-      console.error('Error cargando talleres:', error);
-      setMessage({ type: 'error', text: 'Error cargando datos de talleres' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleMappingChange = (codigo, nombre) => {
-    setMappings(prev => ({
+    setMappings((prev) => ({
       ...prev,
       [codigo]: nombre
     }));
@@ -63,17 +53,17 @@ const ConfigTalleres = () => {
       await updateMappings('talleres', mappings);
       setMessage({ type: 'success', text: 'Mapeos de talleres guardados correctamente' });
       setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: 'Error guardando mapeos' });
     } finally {
       setSaving(false);
     }
   };
 
-  const configurados = talleresCodigos.filter(codigo => mappings[codigo]);
-  const sinConfigurar = talleresCodigos.filter(codigo => !mappings[codigo]);
+  const configurados = talleresCodigos.filter((codigo) => mappings[codigo]);
+  const sinConfigurar = talleresCodigos.filter((codigo) => !mappings[codigo]);
 
-  const filteredCodigos = talleresCodigos.filter(codigo => {
+  const filteredCodigos = talleresCodigos.filter((codigo) => {
     if (!searchTerm) return true;
     const codigoStr = String(codigo).toLowerCase();
     const nombre = mappings[codigo]?.toLowerCase() || '';
@@ -82,9 +72,9 @@ const ConfigTalleres = () => {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className={embedded ? 'py-8' : 'p-8'}>
         <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
           <p className="mt-4 text-gray-400">Cargando talleres...</p>
         </div>
       </div>
@@ -92,12 +82,15 @@ const ConfigTalleres = () => {
   }
 
   return (
-    <div className="p-8">
-      <PageHeader 
-        title="Gestión de Talleres" 
-        subtitle="Configura los códigos y nombres de los talleres"
-        action={
+    <div className={embedded ? '' : 'p-8'}>
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Gestión de Talleres</h1>
+            <p className="text-gray-400 mt-1">Configura los códigos y nombres de los talleres</p>
+          </div>
           <button
+            type="button"
             onClick={handleSaveMappings}
             disabled={saving}
             className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors font-semibold flex items-center gap-2"
@@ -105,20 +98,40 @@ const ConfigTalleres = () => {
             <FaSave />
             {saving ? 'Guardando...' : 'Guardar Todos'}
           </button>
-        }
-      />
+        </div>
+      )}
+
+      {embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <p className="text-sm text-gray-400 max-w-3xl">
+            Códigos de taller que aparecen en <strong className="text-gray-300">citas</strong> e{' '}
+            <strong className="text-gray-300">ingresos</strong>. El nombre se usa en listados, dashboard y
+            exportaciones.
+          </p>
+          <button
+            type="button"
+            onClick={handleSaveMappings}
+            disabled={saving}
+            className="shrink-0 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors font-semibold flex items-center gap-2"
+          >
+            <FaSave />
+            {saving ? 'Guardando...' : 'Guardar talleres'}
+          </button>
+        </div>
+      )}
 
       {message && (
-        <div className={`mb-6 p-4 rounded-lg border fade-in ${
-          message.type === 'success' 
-            ? 'bg-status-success/10 border-status-success text-status-success' 
-            : 'bg-status-danger/10 border-status-danger text-status-danger'
-        }`}>
+        <div
+          className={`mb-6 p-4 rounded-lg border fade-in ${
+            message.type === 'success'
+              ? 'bg-status-success/10 border-status-success text-status-success'
+              : 'bg-status-danger/10 border-status-danger text-status-danger'
+          }`}
+        >
           {message.text}
         </div>
       )}
 
-      {/* Estadísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div className="bg-background-card border border-gray-700 rounded-lg p-6">
           <div className="flex items-center justify-between">
@@ -151,7 +164,6 @@ const ConfigTalleres = () => {
         </div>
       </div>
 
-      {/* Buscador */}
       <div className="mb-6">
         <div className="relative">
           <input
@@ -165,7 +177,6 @@ const ConfigTalleres = () => {
         </div>
       </div>
 
-      {/* Lista de talleres */}
       <div className="bg-background-card border border-gray-700 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -183,37 +194,35 @@ const ConfigTalleres = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {filteredCodigos.map((codigo, index) => (
+              {filteredCodigos.map((codigo) => (
                 <tr key={`taller-${codigo}`} className="hover:bg-gray-800/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-sm text-primary font-semibold">
-                        {codigo}
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-sm text-primary font-semibold">{codigo}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="text"
+                      value={mappings[codigo] || ''}
+                      onChange={(e) => handleMappingChange(codigo, e.target.value)}
+                      placeholder="Ingrese el nombre del taller..."
+                      className="w-full"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    {mappings[codigo] ? (
+                      <span className="inline-flex items-center gap-1 text-status-success text-sm">
+                        <FaCheckCircle />
+                        Configurado
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={mappings[codigo] || ''}
-                        onChange={(e) => handleMappingChange(codigo, e.target.value)}
-                        placeholder="Ingrese el nombre del taller..."
-                        className="w-full"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      {mappings[codigo] ? (
-                        <span className="inline-flex items-center gap-1 text-status-success text-sm">
-                          <FaCheckCircle />
-                          Configurado
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-status-warning text-sm">
-                          <FaExclamationTriangle />
-                          Sin configurar
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-status-warning text-sm">
+                        <FaExclamationTriangle />
+                        Sin configurar
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -226,10 +235,4 @@ const ConfigTalleres = () => {
       )}
     </div>
   );
-};
-
-export default ConfigTalleres;
-
-
-
-
+}

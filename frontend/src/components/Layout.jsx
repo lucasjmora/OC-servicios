@@ -8,7 +8,7 @@ const Layout = () => {
   return (
     <div className="flex min-h-screen bg-background-main">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 w-full overflow-auto">
         <Suspense fallback={<LoadingScreen message="Cargando página..." />}>
           <Outlet />
         </Suspense>

@@ -3,12 +3,10 @@ import { getConfigAccesorios, updateConfigAccesorios, getCiudadesBoletos, getMar
 import PageHeader from '../components/PageHeader';
 import { FaCheckCircle, FaSave, FaInfoCircle, FaMapMarkerAlt, FaCar, FaClock } from 'react-icons/fa';
 
-const ConfigAccesorios = () => {
+const ConfigAccesorios = ({ embedded = false }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
-  const [activeTab, setActiveTab] = useState('ciudadMarca');
-
   const [config, setConfig] = useState({
     diasEspera: 7,
     ciudadMarcaEmpresa: {}
@@ -21,14 +19,9 @@ const ConfigAccesorios = () => {
 
   useEffect(() => {
     loadConfig();
+    loadCiudades();
+    loadMarcas();
   }, []);
-
-  useEffect(() => {
-    if (activeTab === 'ciudadMarca') {
-      if (!ciudadesList.length) loadCiudades();
-      if (!marcasList.length) loadMarcas();
-    }
-  }, [activeTab]);
 
   const loadConfig = async () => {
     try {
@@ -171,12 +164,14 @@ const ConfigAccesorios = () => {
 
   if (loading) {
     return (
-      <div className="p-8">
-        <PageHeader
-          title="Parámetros de Accesorios"
-          subtitle="Configurar parámetros para la gestión de boletos de accesorios"
-          icon={<FaCheckCircle className="text-green-400" />}
-        />
+      <div className={embedded ? '' : 'p-8'}>
+        {!embedded && (
+          <PageHeader
+            title="Parámetros de Accesorios"
+            subtitle="Configurar parámetros para la gestión de boletos de accesorios"
+            icon={<FaCheckCircle className="text-green-400" />}
+          />
+        )}
         <div className="flex justify-center items-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
@@ -185,12 +180,14 @@ const ConfigAccesorios = () => {
   }
 
   return (
-    <div className="p-8">
-      <PageHeader
-        title="Parámetros de Accesorios"
-        subtitle="Configurar parámetros para la gestión de boletos de accesorios"
-        icon={<FaCheckCircle className="text-green-400" />}
-      />
+    <div className={embedded ? '' : 'p-8'}>
+      {!embedded && (
+        <PageHeader
+          title="Parámetros de Accesorios"
+          subtitle="Configurar parámetros para la gestión de boletos de accesorios"
+          icon={<FaCheckCircle className="text-green-400" />}
+        />
+      )}
 
       {message.text && (
         <div
@@ -204,40 +201,109 @@ const ConfigAccesorios = () => {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-gray-700">
-        <button
-          onClick={() => setActiveTab('ciudadMarca')}
-          className={`px-6 py-3 font-semibold transition-colors ${
-            activeTab === 'ciudadMarca'
-              ? 'text-primary border-b-2 border-primary'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <FaMapMarkerAlt />
-            <FaCar />
-            Mapeo Ciudad + Marca
+      <div className="space-y-8">
+        {/* Días de espera — arriba del mapeo ciudad + marca */}
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 text-white">
+            <FaClock className="text-primary" />
+            <h2 className="text-lg font-semibold">Días de espera</h2>
           </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('dias')}
-          className={`px-6 py-3 font-semibold transition-colors ${
-            activeTab === 'dias'
-              ? 'text-primary border-b-2 border-primary'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <FaClock />
-            Días de Espera
+          <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
+            <div className="flex gap-3">
+              <FaInfoCircle className="text-blue-400 text-xl flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-gray-300">
+                <p className="font-semibold text-blue-400 mb-2">¿Qué son los Días de Espera?</p>
+                <p className="mb-2">
+                  Los días de espera determinan cuándo un boleto con estado &quot;abierto - en espera&quot;
+                  debe cambiar automáticamente a &quot;abierto - pendiente&quot;.
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400">
+                  <li>
+                    Si un boleto está en estado <strong className="text-gray-300">&quot;abierto - en espera&quot;</strong>{' '}
+                    y no recibe comentarios durante el período configurado, cambiará automáticamente a{' '}
+                    <strong className="text-gray-300">&quot;abierto - pendiente&quot;</strong>
+                  </li>
+                  <li>También cambiará automáticamente si se vence una alarma configurada previamente</li>
+                  <li>
+                    Cuando un boleto en estado <strong className="text-gray-300">&quot;abierto - pendiente&quot;</strong>{' '}
+                    recibe un nuevo comentario, cambia automáticamente a{' '}
+                    <strong className="text-gray-300">&quot;abierto - en espera&quot;</strong>
+                  </li>
+                  <li>Este parámetro ayuda a gestionar el seguimiento de oportunidades de venta de accesorios</li>
+                </ul>
+              </div>
+            </div>
           </div>
-        </button>
-      </div>
 
-      {/* Tab 1: Mapeo Ciudad + Marca */}
-      {activeTab === 'ciudadMarca' && (
-        <div className="space-y-6">
+          <form onSubmit={handleSubmitDias} className="space-y-4">
+            <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
+              <label className="block text-sm font-semibold text-gray-300 mb-2">Días de Espera</label>
+              <p className="text-xs text-gray-400 mb-3">
+                Número de días sin comentarios antes de que un boleto &quot;en espera&quot; cambie automáticamente
+                a &quot;pendiente&quot;.
+              </p>
+              <div className="flex items-center gap-4">
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={config.diasEspera}
+                  onChange={(e) => handleChange('diasEspera', e.target.value)}
+                  className="w-32 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  required
+                />
+                <span className="text-gray-400">días</span>
+              </div>
+              <div className="mt-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded">
+                <p className="text-xs text-blue-300">
+                  <strong>Ejemplo:</strong> Con {config.diasEspera || 7} días configurados, un boleto &quot;en
+                  espera&quot; sin comentarios desde{' '}
+                  {new Date(
+                    new Date().setDate(new Date().getDate() - (config.diasEspera || 7))
+                  ).toLocaleDateString('es-AR')}{' '}
+                  cambiará automáticamente a &quot;pendiente&quot;.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-4 flex-wrap">
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+              >
+                <FaSave />
+                {saving ? 'Guardando...' : 'Guardar días de espera'}
+              </button>
+              <button
+                type="button"
+                onClick={loadConfig}
+                disabled={saving}
+                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+
+          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+            <h3 className="text-sm font-semibold text-gray-300 mb-2">💡 Consejos de Uso</h3>
+            <ul className="text-xs text-gray-400 space-y-1">
+              <li>• Use períodos cortos (3-7 días) para seguimiento activo de oportunidades</li>
+              <li>• Use períodos más largos (14-30 días) si espera respuestas del cliente</li>
+              <li>• El sistema también respeta las alarmas configuradas manualmente</li>
+              <li>• Revise periódicamente los boletos &quot;pendientes&quot; para asegurar seguimiento oportuno</li>
+              <li>• Los cambios automáticos se registran en el historial del boleto</li>
+            </ul>
+          </div>
+        </section>
+
+        {/* Mapeo Ciudad + Marca */}
+        <section className="space-y-6">
+          <div className="flex items-center gap-2 text-white">
+            <FaMapMarkerAlt className="text-primary" />
+            <FaCar className="text-primary" />
+            <h2 className="text-lg font-semibold">Mapeo Ciudad + Marca</h2>
+          </div>
           <p className="text-sm text-gray-400">
             Defina reglas de mapeo combinando ciudad y marca. El mapeo se aplica solo cuando el boleto
             coincide en <span className="font-semibold text-gray-200">ciudad</span> y{' '}
@@ -347,89 +413,8 @@ const ConfigAccesorios = () => {
               {saving ? 'Guardando...' : 'Guardar mapeo ciudad+marca'}
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Tab 2: Días de Espera */}
-      {activeTab === 'dias' && (
-        <div className="max-w-3xl space-y-6">
-          <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg">
-            <div className="flex gap-3">
-              <FaInfoCircle className="text-blue-400 text-xl flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-300">
-                <p className="font-semibold text-blue-400 mb-2">¿Qué son los Días de Espera?</p>
-                <p className="mb-2">
-                  Los días de espera determinan cuándo un boleto con estado "abierto - en espera"
-                  debe cambiar automáticamente a "abierto - pendiente".
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-gray-400">
-                  <li>Si un boleto está en estado <strong className="text-gray-300">"abierto - en espera"</strong> y no recibe comentarios durante el período configurado, cambiará automáticamente a <strong className="text-gray-300">"abierto - pendiente"</strong></li>
-                  <li>También cambiará automáticamente si se vence una alarma configurada previamente</li>
-                  <li>Cuando un boleto en estado <strong className="text-gray-300">"abierto - pendiente"</strong> recibe un nuevo comentario, cambia automáticamente a <strong className="text-gray-300">"abierto - en espera"</strong></li>
-                  <li>Este parámetro ayuda a gestionar el seguimiento de oportunidades de venta de accesorios</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmitDias} className="space-y-6">
-            <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-              <label className="block text-sm font-semibold text-gray-300 mb-2">Días de Espera</label>
-              <p className="text-xs text-gray-400 mb-3">
-                Número de días sin comentarios antes de que un boleto "en espera" cambie automáticamente a "pendiente".
-              </p>
-              <div className="flex items-center gap-4">
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={config.diasEspera}
-                  onChange={(e) => handleChange('diasEspera', e.target.value)}
-                  className="w-32 px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                  required
-                />
-                <span className="text-gray-400">días</span>
-              </div>
-              <div className="mt-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded">
-                <p className="text-xs text-blue-300">
-                  <strong>Ejemplo:</strong> Con {config.diasEspera || 7} días configurados, un boleto "en espera"
-                  sin comentarios desde {new Date(new Date().setDate(new Date().getDate() - (config.diasEspera || 7))).toLocaleDateString('es-AR')}
-                  cambiará automáticamente a "pendiente".
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-              >
-                <FaSave />
-                {saving ? 'Guardando...' : 'Guardar Configuración'}
-              </button>
-              <button
-                type="button"
-                onClick={loadConfig}
-                disabled={saving}
-                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-            </div>
-          </form>
-
-          <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
-            <h3 className="text-sm font-semibold text-gray-300 mb-2">💡 Consejos de Uso</h3>
-            <ul className="text-xs text-gray-400 space-y-1">
-              <li>• Use períodos cortos (3-7 días) para seguimiento activo de oportunidades</li>
-              <li>• Use períodos más largos (14-30 días) si espera respuestas del cliente</li>
-              <li>• El sistema también respeta las alarmas configuradas manualmente</li>
-              <li>• Revise periódicamente los boletos "pendientes" para asegurar seguimiento oportuno</li>
-              <li>• Los cambios automáticos se registran en el historial del boleto</li>
-            </ul>
-          </div>
-        </div>
-      )}
+        </section>
+      </div>
     </div>
   );
 };

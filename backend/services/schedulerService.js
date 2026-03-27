@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { executeImport } from './importService.js';
 import { refreshORsPivot } from './orsAbiertasService.js';
 import Configuracion from '../models/Configuracion.js';
+import { applyEnvConfigOverrides } from './envConfig.js';
 
 let scheduledTask = null;
 
@@ -10,12 +11,18 @@ let scheduledTask = null;
  */
 export async function startScheduler() {
   try {
-    const config = await Configuracion.findOne({ singleton: true });
+    const configDoc = await Configuracion.findOne({ singleton: true });
     
-    if (!config || !config.scheduler.enabled) {
+    if (!configDoc || !configDoc.scheduler.enabled) {
       console.log('Scheduler deshabilitado');
       return;
     }
+    
+    const plain =
+      configDoc && typeof configDoc.toObject === 'function'
+        ? configDoc.toObject({ flattenMaps: true })
+        : JSON.parse(JSON.stringify(configDoc));
+    const config = applyEnvConfigOverrides(plain);
     
     const { cronExpression } = config.scheduler;
     const { citas, ingresos, orsAbiertas } = config.filePaths;

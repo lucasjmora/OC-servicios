@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getBotNoTratadosStats, getAsistenciaAbiertosPendientesStats, getOportunidades10kStats, getAccesoriosStats } from '../services/api';
-import { FaRobot, FaExclamationTriangle, FaClipboardList, FaLightbulb, FaShoppingBag } from 'react-icons/fa';
+import { getPresupCrmSlaPendienteEmpresas } from '../services/presupCrmApi';
+import { FaExclamationTriangle, FaClipboardList, FaLightbulb, FaShoppingBag, FaFileAlt } from 'react-icons/fa';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -10,6 +11,11 @@ const Dashboard = () => {
     PW: { total: 0, porLocalidad: {} }
   });
   const [asistenciaStats, setAsistenciaStats] = useState({
+    FC: { total: 0, porTaller: {} },
+    GV: { total: 0, porTaller: {} },
+    PW: { total: 0, porTaller: {} }
+  });
+  const [presupuestosStats, setPresupuestosStats] = useState({
     FC: { total: 0, porTaller: {} },
     GV: { total: 0, porTaller: {} },
     PW: { total: 0, porTaller: {} }
@@ -28,8 +34,11 @@ const Dashboard = () => {
   });
   const [fechaDesdeAccesorios, setFechaDesdeAccesorios] = useState(null);
   const [fechaHastaAccesorios, setFechaHastaAccesorios] = useState(null);
+  const [fechaDesdePresupuestos, setFechaDesdePresupuestos] = useState(null);
+  const [fechaHastaPresupuestos, setFechaHastaPresupuestos] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingAsistencia, setLoadingAsistencia] = useState(true);
+  const [loadingPresupuestos, setLoadingPresupuestos] = useState(true);
   const [loadingOportunidades10k, setLoadingOportunidades10k] = useState(true);
   const [loadingAccesorios, setLoadingAccesorios] = useState(true);
 
@@ -38,9 +47,52 @@ const Dashboard = () => {
     // y luego las otras en paralelo
     loadAsistenciaStats();
     loadStats();
+    loadPresupuestosCrmStats();
     loadOportunidades10kStats();
     loadAccesoriosStats();
   }, []);
+
+  const emptyPresupEmpresaStats = () => ({
+    FC: { total: 0, porTaller: {} },
+    GV: { total: 0, porTaller: {} },
+    PW: { total: 0, porTaller: {} }
+  });
+
+  const loadPresupuestosCrmStats = async () => {
+    try {
+      setLoadingPresupuestos(true);
+      const response = await getPresupCrmSlaPendienteEmpresas();
+      if (response.data?.success && response.data.data) {
+        const d = response.data.data;
+        setPresupuestosStats({
+          FC: d.FC || { total: 0, porTaller: {} },
+          GV: d.GV || { total: 0, porTaller: {} },
+          PW: d.PW || { total: 0, porTaller: {} }
+        });
+        if (d.fechaDesde) {
+          setFechaDesdePresupuestos(new Date(d.fechaDesde));
+        } else {
+          setFechaDesdePresupuestos(null);
+        }
+        if (d.fechaHasta) {
+          setFechaHastaPresupuestos(new Date(d.fechaHasta));
+        } else {
+          setFechaHastaPresupuestos(null);
+        }
+      } else {
+        setPresupuestosStats(emptyPresupEmpresaStats());
+        setFechaDesdePresupuestos(null);
+        setFechaHastaPresupuestos(null);
+      }
+    } catch (error) {
+      console.error('Error cargando estadísticas Presup CRM (SLA pendiente):', error);
+      setPresupuestosStats(emptyPresupEmpresaStats());
+      setFechaDesdePresupuestos(null);
+      setFechaHastaPresupuestos(null);
+    } finally {
+      setLoadingPresupuestos(false);
+    }
+  };
 
   const loadStats = async () => {
     try {
@@ -147,10 +199,10 @@ const Dashboard = () => {
     return (
       <Link
         to={link}
-        className="bg-background-card border border-gray-700 rounded-lg p-6 hover:border-primary transition-all duration-200 block"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
       >
         {/* Header con empresa y total en la misma línea */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-[0.72rem]">
           <div className="flex items-center gap-3">
             <p className="text-2xl font-bold text-white">{nombre}</p>
             <p className="text-3xl font-bold text-yellow-400">
@@ -170,7 +222,7 @@ const Dashboard = () => {
         
         {/* Desglose por localidad - una sola línea, número debajo de la abreviatura */}
         {!loading && localidades.length > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
               {localidades.map(([localidad, cantidad]) => (
                 <div key={localidad} className="flex flex-col items-center text-center shrink-0 min-w-[60px]">
@@ -183,7 +235,7 @@ const Dashboard = () => {
         )}
         
         {!loading && localidades.length === 0 && total > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <p className="text-xs text-gray-500">Sin localidad asignada</p>
           </div>
         )}
@@ -204,10 +256,10 @@ const Dashboard = () => {
     return (
       <Link
         to="/asistencia"
-        className="bg-background-card border border-gray-700 rounded-lg p-6 hover:border-primary transition-all duration-200 block"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
       >
         {/* Header con empresa y total en la misma línea */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-[0.72rem]">
           <div className="flex items-center gap-3">
             <p className="text-2xl font-bold text-white">{nombre}</p>
             <p className="text-3xl font-bold text-blue-400">
@@ -227,7 +279,7 @@ const Dashboard = () => {
         
         {/* Desglose por taller - una sola línea, número debajo de la abreviatura */}
         {!loadingAsistencia && talleres.length > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
               {talleres.map(([taller, cantidad]) => (
                 <div key={taller} className="flex flex-col items-center text-center shrink-0 min-w-[60px]">
@@ -240,7 +292,63 @@ const Dashboard = () => {
         )}
         
         {!loadingAsistencia && talleres.length === 0 && total > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
+            <p className="text-xs text-gray-500">Sin taller asignado</p>
+          </div>
+        )}
+      </Link>
+    );
+  };
+
+  const PresupuestosStatCard = ({ nombre, datos, fechaDesde, fechaHasta }) => {
+    const total = datos?.total || 0;
+    const porTaller = datos?.porTaller || {};
+    const talleres = Object.entries(porTaller).sort((a, b) => b[1] - a[1]);
+    const colors = { text: 'text-teal-400', bg: 'bg-teal-500' };
+
+    const fechaDesdeStr = fechaDesde
+      ? fechaDesde.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '-';
+    const fechaHastaStr = fechaHasta
+      ? fechaHasta.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '-';
+
+    return (
+      <Link
+        to="/presup-crm/presupuestos"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
+      >
+        <div className="flex items-center justify-between mb-[0.72rem]">
+          <div className="flex items-center gap-3">
+            <p className="text-2xl font-bold text-white">{nombre}</p>
+            <p className={`text-3xl font-bold ${colors.text}`}>
+              {loadingPresupuestos ? '...' : total.toLocaleString()}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end">
+              <p className="text-xs text-white">{fechaDesdeStr}</p>
+              <p className="text-xs text-white">{fechaHastaStr}</p>
+            </div>
+            <div className={`w-12 h-12 rounded-lg ${colors.bg} flex items-center justify-center flex-shrink-0`}>
+              <FaFileAlt className="text-white text-xl" />
+            </div>
+          </div>
+        </div>
+        {!loadingPresupuestos && talleres.length > 0 && (
+          <div className="border-t border-gray-700 pt-[0.72rem]">
+            <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
+              {talleres.map(([taller, cantidad]) => (
+                <div key={taller} className="flex flex-col items-center text-center shrink-0 min-w-[56px]">
+                  <span className="text-white text-sm mb-0.5">{taller}</span>
+                  <span className={`${colors.text} font-bold text-lg`}>{cantidad}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {!loadingPresupuestos && talleres.length === 0 && total > 0 && (
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <p className="text-xs text-gray-500">Sin taller asignado</p>
           </div>
         )}
@@ -264,9 +372,9 @@ const Dashboard = () => {
     return (
       <Link
         to="/oportunidades"
-        className="bg-background-card border border-gray-700 rounded-lg p-6 hover:border-primary transition-all duration-200 block"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-[0.72rem]">
           <div className="flex items-center gap-3">
             <p className="text-2xl font-bold text-white">{nombre}</p>
             <p className={`text-3xl font-bold ${colors.text}`}>
@@ -284,7 +392,7 @@ const Dashboard = () => {
           </div>
         </div>
         {!loadingOportunidades10k && talleres.length > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
               {talleres.map(([taller, cantidad]) => (
                 <div key={taller} className="flex flex-col items-center text-center shrink-0 min-w-[56px]">
@@ -297,7 +405,7 @@ const Dashboard = () => {
         )}
         
         {!loadingOportunidades10k && talleres.length === 0 && total > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <p className="text-xs text-gray-500">Sin taller asignado</p>
           </div>
         )}
@@ -321,9 +429,9 @@ const Dashboard = () => {
     return (
       <Link
         to="/accesorios"
-        className="bg-background-card border border-gray-700 rounded-lg p-6 hover:border-primary transition-all duration-200 block"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-[0.72rem]">
           <div className="flex items-center gap-3">
             <p className="text-2xl font-bold text-white">{nombre}</p>
             <p className={`text-3xl font-bold ${colors.text}`}>
@@ -341,7 +449,7 @@ const Dashboard = () => {
           </div>
         </div>
         {!loadingAccesorios && sucursales.length > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
               {sucursales.map(([sucursal, cantidad]) => (
                 <div key={sucursal} className="flex flex-col items-center text-center shrink-0 min-w-[56px]">
@@ -353,12 +461,12 @@ const Dashboard = () => {
           </div>
         )}
         {!loadingAccesorios && sucursales.length === 0 && total > 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <p className="text-xs text-gray-500">Sin sucursal asignada</p>
           </div>
         )}
         {!loadingAccesorios && total === 0 && (
-          <div className="border-t border-gray-700 pt-4">
+          <div className="border-t border-gray-700 pt-[0.72rem]">
             <p className="text-xs text-gray-500">Sin datos en el período</p>
           </div>
         )}
@@ -367,11 +475,16 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="p-8">
+    <div className="px-8 py-[1.44rem]">
+      <div className="mb-[1.08rem]">
+        <h1 className="text-3xl font-bold text-white mb-[0.18rem]">Dashboard</h1>
+        <p className="text-gray-400 text-sm mb-[0.72rem]">Resumen de servicios</p>
+      </div>
+
       {/* Sección Oportunidades BOT */}
-      <div className="mt-6 bg-background-card border border-gray-700 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Oportunidades BOT</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
+        <h2 className="text-xl font-bold text-white mb-[0.72rem]">Oportunidades BOT</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
           <StatCard
             empresa="FC"
             nombre={empresaNames.FC}
@@ -394,9 +507,9 @@ const Dashboard = () => {
       </div>
 
       {/* Sección Asistencia */}
-      <div className="mt-6 bg-background-card border border-gray-700 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Asistencia</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
+        <h2 className="text-xl font-bold text-white mb-[0.72rem]">Asistencia</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
           <AsistenciaStatCard
             empresa="FC"
             nombre={empresaNames.FC}
@@ -415,38 +528,35 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Sección Oportunidades 10k */}
-      <div className="mt-6 bg-background-card border border-gray-700 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Oportunidades 10k</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Oportunidades10kStatCard
-            empresa="FC"
+      {/* Presup CRM: abiertos con subestado SLA pendiente por empresa */}
+      <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
+        <h2 className="text-xl font-bold text-white mb-[0.72rem]">Presupuestos</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
+          <PresupuestosStatCard
             nombre={empresaNames.FC}
-            datos={oportunidades10kStats.FC}
-            fechaDesde={fechaDesdeOportunidades}
-            fechaHasta={fechaLimiteOportunidades}
+            datos={presupuestosStats.FC}
+            fechaDesde={fechaDesdePresupuestos}
+            fechaHasta={fechaHastaPresupuestos}
           />
-          <Oportunidades10kStatCard
-            empresa="GV"
+          <PresupuestosStatCard
             nombre={empresaNames.GV}
-            datos={oportunidades10kStats.GV}
-            fechaDesde={fechaDesdeOportunidades}
-            fechaHasta={fechaLimiteOportunidades}
+            datos={presupuestosStats.GV}
+            fechaDesde={fechaDesdePresupuestos}
+            fechaHasta={fechaHastaPresupuestos}
           />
-          <Oportunidades10kStatCard
-            empresa="PW"
+          <PresupuestosStatCard
             nombre={empresaNames.PW}
-            datos={oportunidades10kStats.PW}
-            fechaDesde={fechaDesdeOportunidades}
-            fechaHasta={fechaLimiteOportunidades}
+            datos={presupuestosStats.PW}
+            fechaDesde={fechaDesdePresupuestos}
+            fechaHasta={fechaHastaPresupuestos}
           />
         </div>
       </div>
 
       {/* Sección Accesorios: 3 subtarjetas por empresa (FC, GV, PW), desglose por sucursal (prefijo del campo Suc) */}
-      <div className="mt-6 bg-background-card border border-gray-700 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Accesorios</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
+        <h2 className="text-xl font-bold text-white mb-[0.72rem]">Accesorios</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
           <AccesoriosStatCard
             empresa="FC"
             nombre={empresaNames.FC}
@@ -467,6 +577,34 @@ const Dashboard = () => {
             datos={accesoriosStats.PW}
             fechaDesde={fechaDesdeAccesorios}
             fechaHasta={fechaHastaAccesorios}
+          />
+        </div>
+      </div>
+
+      {/* Sección Oportunidades 10k */}
+      <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
+        <h2 className="text-xl font-bold text-white mb-[0.72rem]">Oportunidades 10k</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
+          <Oportunidades10kStatCard
+            empresa="FC"
+            nombre={empresaNames.FC}
+            datos={oportunidades10kStats.FC}
+            fechaDesde={fechaDesdeOportunidades}
+            fechaHasta={fechaLimiteOportunidades}
+          />
+          <Oportunidades10kStatCard
+            empresa="GV"
+            nombre={empresaNames.GV}
+            datos={oportunidades10kStats.GV}
+            fechaDesde={fechaDesdeOportunidades}
+            fechaHasta={fechaLimiteOportunidades}
+          />
+          <Oportunidades10kStatCard
+            empresa="PW"
+            nombre={empresaNames.PW}
+            datos={oportunidades10kStats.PW}
+            fechaDesde={fechaDesdeOportunidades}
+            fechaHasta={fechaLimiteOportunidades}
           />
         </div>
       </div>

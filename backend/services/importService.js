@@ -671,6 +671,84 @@ function hasChanges(oldDoc, newData, debugRef = null) {
   return false;
 }
 
+/** Máx. filas de detalle por colección (evita documentos Mongo enormes). */
+const MAX_DETALLE_POR_COLECCION = 100;
+
+function serializeForLog(val) {
+  if (val === null || val === undefined) return '(vacío)';
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === 'object' && !Array.isArray(val)) {
+    try {
+      const s = JSON.stringify(val);
+      return s.length > 280 ? `${s.slice(0, 280)}…` : s;
+    } catch {
+      return String(val);
+    }
+  }
+  if (Array.isArray(val)) {
+    const s = JSON.stringify(val);
+    return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+  }
+  const str = String(val);
+  return str.length > 400 ? `${str.slice(0, 400)}…` : str;
+}
+
+/**
+ * Lista todos los campos que difieren entre el documento en BD y el Excel (misma lógica que hasChanges).
+ */
+function getFieldChanges(oldDoc, newData) {
+  const cambios = [];
+  if (!oldDoc || !newData) return cambios;
+
+  const excludedFields = new Set([
+    '_id',
+    'createdAt',
+    'updatedAt',
+    '__v',
+    'EstadoAsistencia',
+    'IngresoReferencia',
+    'FechaIngreso',
+    'FechaCalculo'
+  ]);
+
+  const relevantFields = Object.keys(newData).filter(key => !excludedFields.has(key));
+  if (relevantFields.length === 0) return cambios;
+
+  for (const field of relevantFields) {
+    const oldValue = oldDoc[field];
+    const newValue = newData[field];
+    const oldIsEmpty = oldValue === null || oldValue === undefined || oldValue === '';
+    const newIsEmpty = newValue === null || newValue === undefined || newValue === '';
+
+    if (field === 'Matrícula vehí' && oldIsEmpty && !newIsEmpty) {
+      cambios.push({ campo: field, anterior: serializeForLog(oldValue), nuevo: serializeForLog(newValue) });
+      continue;
+    }
+    if (oldIsEmpty && newIsEmpty) continue;
+
+    const normalizedOld = normalizeValue(oldValue);
+    const normalizedNew = normalizeValue(newValue);
+    if (!compareValues(normalizedOld, normalizedNew)) {
+      cambios.push({ campo: field, anterior: serializeForLog(oldValue), nuevo: serializeForLog(newValue) });
+    }
+  }
+  return cambios;
+}
+
+function snapshotResumenDoc(doc, maxKeys = 10) {
+  if (!doc || typeof doc !== 'object') return {};
+  const excluded = new Set(['_id', '__v', 'createdAt', 'updatedAt']);
+  const out = {};
+  let n = 0;
+  for (const k of Object.keys(doc)) {
+    if (excluded.has(k)) continue;
+    out[k] = serializeForLog(doc[k]);
+    n++;
+    if (n >= maxKeys) break;
+  }
+  return out;
+}
+
 /**
  * Importa datos de Citas desde archivo Excel (OPTIMIZADO)
  */
@@ -1065,7 +1143,17 @@ async function importCitasConEstados(citasData) {
     nuevos: 0,
     actualizados: 0,
     sinCambios: 0,
-    errores: 0
+    errores: 0,
+    detalle: [],
+    detalleTruncado: false
+  };
+
+  const pushDetalle = (entry) => {
+    if (stats.detalle.length >= MAX_DETALLE_POR_COLECCION) {
+      stats.detalleTruncado = true;
+      return;
+    }
+    stats.detalle.push(entry);
   };
   
   try {
@@ -1325,6 +1413,13 @@ async function importCitasConEstados(citasData) {
           await Cita.insertMany(lote, { ordered: false });
           stats.nuevos += lote.length;
           console.log(`✅ Lote insertado: ${stats.nuevos}/${citasNuevas.length}`);
+          for (const c of lote) {
+            pushDetalle({
+              referencia: String(c.Referencia),
+              accion: 'creado',
+              estadoFinal: snapshotResumenDoc(c, 12)
+            });
+          }
         } catch (error) {
           if (error.code === 11000) {
             // Duplicados - verificar uno por uno si realmente son nuevos
@@ -1345,6 +1440,11 @@ async function importCitasConEstados(citasData) {
                   try {
                     await Cita.create(cita);
                     stats.nuevos++;
+                    pushDetalle({
+                      referencia: String(cita.Referencia),
+                      accion: 'creado',
+                      estadoFinal: snapshotResumenDoc(cita, 12)
+                    });
                   } catch (singleError) {
                     if (singleError.code === 11000) {
                       // Duplicado - ya existe (race condition)
@@ -1398,6 +1498,14 @@ async function importCitasConEstados(citasData) {
           const refNormalizada = normalizeReferencia(cita.Referencia);
           const existing = existingMap.get(refNormalizada);
           if (existing && hasChanges(existing, cita, cita.Referencia)) {
+            const cambios = getFieldChanges(existing, cita);
+            const merged = { ...existing, ...cita, updatedAt: new Date() };
+            pushDetalle({
+              referencia: String(cita.Referencia),
+              accion: 'actualizado',
+              cambios,
+              estadoFinal: snapshotResumenDoc(merged, 12)
+            });
             bulkOps.push({
               updateOne: {
                 filter: { Referencia: cita.Referencia },
@@ -1454,7 +1562,17 @@ async function importIngresosConEstados(ingresosData) {
     nuevos: 0,
     actualizados: 0,
     sinCambios: 0,
-    errores: 0
+    errores: 0,
+    detalle: [],
+    detalleTruncado: false
+  };
+
+  const pushDetalle = (entry) => {
+    if (stats.detalle.length >= MAX_DETALLE_POR_COLECCION) {
+      stats.detalleTruncado = true;
+      return;
+    }
+    stats.detalle.push(entry);
   };
   
   try {
@@ -1771,6 +1889,13 @@ async function importIngresosConEstados(ingresosData) {
           await Ingreso.insertMany(lote, { ordered: false });
           stats.nuevos += lote.length;
           console.log(`✅ Lote insertado: ${stats.nuevos}/${ingresosNuevos.length}`);
+          for (const row of lote) {
+            pushDetalle({
+              referencia: String(row.Referencia),
+              accion: 'creado',
+              estadoFinal: snapshotResumenDoc(row, 12)
+            });
+          }
         } catch (error) {
           if (error.code === 11000) {
             // Duplicados - verificar uno por uno si realmente son nuevos
@@ -1791,6 +1916,11 @@ async function importIngresosConEstados(ingresosData) {
                   try {
                     await Ingreso.create(ingreso);
                     stats.nuevos++;
+                    pushDetalle({
+                      referencia: String(ingreso.Referencia),
+                      accion: 'creado',
+                      estadoFinal: snapshotResumenDoc(ingreso, 12)
+                    });
                   } catch (singleError) {
                     if (singleError.code === 11000) {
                       // Duplicado - ya existe (race condition)
@@ -1844,6 +1974,14 @@ async function importIngresosConEstados(ingresosData) {
           const refNormalizada = normalizeReferencia(ingreso.Referencia);
           const existing = existingMap.get(refNormalizada);
           if (existing && hasChanges(existing, ingreso, ingreso.Referencia)) {
+            const cambios = getFieldChanges(existing, ingreso);
+            const merged = { ...existing, ...ingreso, updatedAt: new Date() };
+            pushDetalle({
+              referencia: String(ingreso.Referencia),
+              accion: 'actualizado',
+              cambios,
+              estadoFinal: snapshotResumenDoc(merged, 12)
+            });
             bulkOps.push({
               updateOne: {
                 filter: { Referencia: ingreso.Referencia },
@@ -2004,9 +2142,12 @@ function updateProgress(step, progress, details = '') {
 }
 
 /**
- * Ejecuta la importación completa de ambos archivos con análisis de asistencia (OPTIMIZADO)
+ * Ejecuta importación de citas/ingresos.
+ * @param {object} [options]
+ * @param {'full'|'citas-only'|'ingresos-only'} [options.scope='full'] — en parcial no se ejecutan boletos, ventas ni persistencia global lastImport.
  */
-export async function executeImport(citasPath, ingresosPath) {
+export async function executeImport(citasPath, ingresosPath, options = {}) {
+  const scope = options.scope || 'full';
   const startTime = Date.now();
   importProgress.isRunning = true;
   importProgress.startTime = startTime;
@@ -2062,8 +2203,18 @@ export async function executeImport(citasPath, ingresosPath) {
       updateProgress('Leyendo archivos', 2, '⚠️ Archivo de ingresos no encontrado');
     }
     
-    if (citasData.length === 0 && ingresosData.length === 0) {
-      throw new Error('No se encontraron archivos válidos para importar');
+    if (scope === 'full') {
+      if (citasData.length === 0 && ingresosData.length === 0) {
+        throw new Error('No se encontraron archivos válidos para importar');
+      }
+    } else if (scope === 'citas-only') {
+      if (citasData.length === 0) {
+        throw new Error('No hay datos de citas en el Excel');
+      }
+    } else if (scope === 'ingresos-only') {
+      if (ingresosData.length === 0) {
+        throw new Error('No hay datos de ingresos en el Excel');
+      }
     }
     
     // PASO 2: Procesar fechas y limpiar datos
@@ -2203,7 +2354,20 @@ export async function executeImport(citasPath, ingresosPath) {
         console.log(`✅ Importación de ingresos: ${result.stats.nuevos} nuevos, ${result.stats.actualizados} actualizados`);
       }
     }
-    
+
+    if (scope !== 'full') {
+      resultado.status = 'success';
+      resultado.duration = Date.now() - startTime;
+      importProgress.isRunning = false;
+      updateProgress(
+        'Completado',
+        6,
+        `✅ Importación ${scope} en ${((resultado.duration || 0) / 1000).toFixed(2)}s`
+      );
+      console.log(`✅ Importación parcial (${scope}) completada en ${((resultado.duration || 0) / 1000).toFixed(2)}s`);
+      return resultado;
+    }
+
     // PASO 5: Sincronizar boletos (opcional, puede fallar si no hay configuración)
     try {
       updateProgress('Sincronizando boletos', 5, 'Sincronizando boletos desde API externa...');
@@ -2293,7 +2457,11 @@ export async function executeImport(citasPath, ingresosPath) {
           mesesProcesados: resultado.ventas?.procesados || 0,
           errores: resultado.ventas?.errores || 0,
           error: resultado.ventas?.error || null
-        }
+        },
+        detalleCitas: resultado.citas?.detalle || [],
+        detalleIngresos: resultado.ingresos?.detalle || [],
+        detalleCitasTruncado: !!resultado.citas?.detalleTruncado,
+        detalleIngresosTruncado: !!resultado.ingresos?.detalleTruncado
       }
     };
     
@@ -2323,15 +2491,19 @@ export async function executeImport(citasPath, ingresosPath) {
     console.log('🚀 ========================================');
     console.error('💥 Error:', error.message);
     console.error('📍 Stack:', error.stack);
-    
+
     resultado.status = 'error';
     resultado.error = error.message;
     resultado.duration = Date.now() - startTime;
     importProgress.isRunning = false;
     updateProgress('Error', 0, `❌ Error: ${error.message}`);
-    
+
     console.error('❌ Error en importación:', error);
-    
+
+    if (scope !== 'full') {
+      throw error;
+    }
+
     // Actualizar configuración con error
     // Construir el objeto lastImport completo para evitar errores cuando lastImport es null
     const lastImportError = {
@@ -2360,18 +2532,31 @@ export async function executeImport(citasPath, ingresosPath) {
  */
 export async function getImportStatus() {
   const config = await Configuracion.findOne({ singleton: true });
-  
+
+  const lastImportByModule = config?.lastImportByModule
+    ? typeof config.lastImportByModule.toObject === 'function'
+      ? config.lastImportByModule.toObject()
+      : { ...config.lastImportByModule }
+    : {};
+
   if (!config || !config.lastImport) {
     return {
       lastImport: null,
-      message: 'No se ha ejecutado ninguna importación'
+      message: 'No se ha ejecutado ninguna importación',
+      lastImportByModule
     };
   }
-  
+
   return {
     lastImport: config.lastImport,
-    filePaths: config.filePaths
+    filePaths: config.filePaths,
+    lastImportByModule
   };
+}
+
+/** True si hay una importación executeImport en curso (excluye otros procesos). */
+export function isImportRunning() {
+  return importProgress.isRunning === true;
 }
 
 /**

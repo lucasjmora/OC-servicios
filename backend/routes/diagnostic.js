@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Cita from '../models/Cita.js';
 import Ingreso from '../models/Ingreso.js';
 import Configuracion from '../models/Configuracion.js';
+import { applyEnvConfigOverrides } from '../services/envConfig.js';
 
 const router = express.Router();
 
@@ -95,14 +96,20 @@ router.get('/files', async (req, res) => {
     const fs = (await import('fs')).default;
     const path = (await import('path')).default;
     
-    const config = await Configuracion.findOne({ singleton: true });
+    const configDoc = await Configuracion.findOne({ singleton: true });
     
-    if (!config || !config.filePaths) {
+    if (!configDoc) {
       return res.json({
         error: 'No hay configuración de archivos',
         files: {}
       });
     }
+    
+    const plain =
+      configDoc && typeof configDoc.toObject === 'function'
+        ? configDoc.toObject({ flattenMaps: true })
+        : JSON.parse(JSON.stringify(configDoc));
+    const config = applyEnvConfigOverrides(plain);
     
     const files = {};
     
@@ -250,11 +257,17 @@ router.get('/comparar-referencias', async (req, res) => {
 
     const xlsx = (await import('xlsx')).default;
     const fs = (await import('fs')).default;
-    const config = await Configuracion.findOne({ singleton: true });
+    const configDoc = await Configuracion.findOne({ singleton: true });
 
-    if (!config || !config.filePaths) {
+    if (!configDoc) {
       return res.status(400).json({ error: 'No hay configuración de archivos' });
     }
+
+    const plain =
+      configDoc && typeof configDoc.toObject === 'function'
+        ? configDoc.toObject({ flattenMaps: true })
+        : JSON.parse(JSON.stringify(configDoc));
+    const config = applyEnvConfigOverrides(plain);
 
     const result = {
       citas: {

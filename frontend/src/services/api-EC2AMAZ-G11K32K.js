@@ -234,12 +234,6 @@ export const getVentasResumen = (mesKey) => api.get(`/ventas/resumen/${mesKey}`)
 
 export const getVentasMeses = () => api.get('/ventas/meses');
 
-export const procesarVentas = () => api.post('/ventas/procesar');
-
-export const getConfigVentas = () => api.get('/config/ventas');
-
-export const updateConfigVentas = (data) => api.put('/config/ventas', data);
-
 // ===== HEALTH CHECK =====
 
 export const healthCheck = () => api.get('/health');

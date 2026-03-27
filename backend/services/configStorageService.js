@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { applyEnvConfigOverrides } from './envConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +100,13 @@ class ConfigStorageService {
       throw new Error('Servicio de configuración no inicializado');
     }
     return { ...this.config };
+  }
+
+  /**
+   * Configuración efectiva en runtime (archivo/DB + variables de entorno).
+   */
+  getEffectiveConfig() {
+    return applyEnvConfigOverrides(this.getConfig());
   }
 
   /**
@@ -253,7 +261,8 @@ class ConfigStorageService {
       filePaths: {
         citas: 'C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\citas.xlsx',
         ingresos: 'C:\\Users\\Lucas\\OneDrive - Grupo Opencars\\uipath\\PV_report_PBI\\source\\Citas\\u124.xlsx',
-        orsAbiertas: ''
+        orsAbiertas: '',
+        presupuestos: ''
       },
       scheduler: {
         enabled: false,
@@ -274,9 +283,42 @@ class ConfigStorageService {
         mesesDesdeCierre: 3
       },
       lastImport: null,
+      presupCrm: {
+        mongodb: {
+          uri: '',
+          database: 'Presupuestos',
+          collection: 'presup_taller',
+          collectionTalleres: 'talleres'
+        },
+        excel: { filePath: '' },
+        scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
+        talleres: [],
+        aceites: [],
+        general: {},
+        lastImport: null
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+  }
+
+  /**
+   * Actualiza la configuración del módulo Presup CRM (sin pisar oc_servicios)
+   */
+  async updatePresupCrm(presupCrm) {
+    if (!this.isInitialized) {
+      throw new Error('Servicio de configuración no inicializado');
+    }
+    this.config.presupCrm = {
+      ...(this.config.presupCrm || {}),
+      ...presupCrm,
+      mongodb: { ...(this.config.presupCrm?.mongodb || {}), ...(presupCrm?.mongodb || {}) },
+      excel: { ...(this.config.presupCrm?.excel || {}), ...(presupCrm?.excel || {}) },
+      scheduler: { ...(this.config.presupCrm?.scheduler || {}), ...(presupCrm?.scheduler || {}) }
+    };
+    await this.saveConfig();
+    console.log('✅ Configuración Presup CRM actualizada en almacenamiento local');
+    return this.config;
   }
 
   /**
@@ -310,7 +352,8 @@ class ConfigStorageService {
     return this.config?.filePaths || {
       citas: '',
       ingresos: '',
-      orsAbiertas: ''
+      orsAbiertas: '',
+      presupuestos: ''
     };
   }
 

@@ -4,8 +4,25 @@ import Configuracion from '../models/Configuracion.js';
 import { restartScheduler } from '../services/schedulerService.js';
 import configStorageService from '../services/configStorageService.js';
 import { refreshORsPivot } from '../services/orsAbiertasService.js';
+import {
+  applyEnvConfigOverrides,
+  buildClientSafeConfig,
+  getEnvSourceFlags,
+  stripEnvBackedFieldsFromUpdates
+} from '../services/envConfig.js';
 
 const router = express.Router();
+
+/** Expone ruta Excel presup en filePaths si aún no está (retrocompat con presupCrm.excel.filePath). */
+function enrichFilePathsWithPresupCrm(config) {
+  if (!config || typeof config !== 'object') return config;
+  const fp = { ...(config.filePaths || {}) };
+  const ex = config.presupCrm?.excel || {};
+  if (!('presupuestos' in fp)) {
+    fp.presupuestos = ex.filePath != null ? String(ex.filePath) : '';
+  }
+  return { ...config, filePaths: fp };
+}
 
 // MongoDB restringe claves que comienzan con . o $ - se codifican para almacenamiento
 const PREFIX_DOT = '__DOT__';
@@ -80,6 +97,9 @@ router.get('/', async (req, res) => {
             if (dbConfig.oportunidades) {
               await configStorageService.updateOportunidades(dbConfig.oportunidades);
             }
+            if (dbConfig.presupCrm) {
+              await configStorageService.updatePresupCrm(dbConfig.presupCrm);
+            }
             config = configStorageService.getConfig();
           } else {
             config = dbConfig;
@@ -93,7 +113,12 @@ router.get('/', async (req, res) => {
               database: 'oc_servicios',
               collections: { citas: 'citas', ingresos: 'ingresos' }
             },
-            filePaths: { citas: '', ingresos: '', orsAbiertas: '' },
+            filePaths: {
+              citas: '',
+              ingresos: '',
+              orsAbiertas: '',
+              presupuestos: ''
+            },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
             mappings: { talleres: new Map(), usuarios: new Map(), campos: new Map(), orsAbiertasTalleres: new Map() }
           });
@@ -104,7 +129,12 @@ router.get('/', async (req, res) => {
           // Configuración por defecto si no hay nada disponible
           config = {
             mongodb: { uri: '', database: 'oc_servicios', collections: { citas: 'citas', ingresos: 'ingresos' } },
-            filePaths: { citas: '', ingresos: '', orsAbiertas: '' },
+            filePaths: {
+              citas: '',
+              ingresos: '',
+              orsAbiertas: '',
+              presupuestos: ''
+            },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
             mappings: { talleres: [], usuarios: [], campos: {}, orsAbiertasTalleres: {} }
           };
@@ -112,7 +142,14 @@ router.get('/', async (req, res) => {
       }
     }
     
-    res.json(config);
+    const plain =
+      config && typeof config.toObject === 'function'
+        ? config.toObject({ flattenMaps: true })
+        : JSON.parse(JSON.stringify(config));
+    const enriched = enrichFilePathsWithPresupCrm(plain);
+    const merged = applyEnvConfigOverrides(enriched);
+    const safe = buildClientSafeConfig(merged);
+    res.json({ ...safe, envSourceHints: getEnvSourceFlags() });
   } catch (error) {
     console.error('Error obteniendo configuración:', error);
     res.status(500).json({ error: error.message });
@@ -167,7 +204,7 @@ router.put('/', async (req, res) => {
     console.log('PUT /api/config - Iniciando actualización');
     console.log('Datos recibidos:', JSON.stringify(req.body, null, 2));
     
-    const updates = req.body;
+    const updates = stripEnvBackedFieldsFromUpdates(req.body);
     
     // Si hay una URI en la petición, usarla para conectar
     let connectionUri = null;
@@ -195,6 +232,21 @@ router.put('/', async (req, res) => {
     );
     
     console.log('Configuración actualizada exitosamente en MongoDB');
+
+    /** Ruta Excel presupuestos: sincronizar presupCrm.excel.filePath (la hoja usada es siempre la primera, como Citas/Ingresos/ORs). */
+    if (updates.filePaths && updates.filePaths.presupuestos !== undefined) {
+      await Configuracion.findOneAndUpdate(
+        { singleton: true },
+        { $set: { 'presupCrm.excel.filePath': updates.filePaths.presupuestos } },
+        { new: true }
+      );
+      if (configStorageService.isInitialized) {
+        const fresh = await Configuracion.findOne({ singleton: true }).lean();
+        if (fresh?.presupCrm) {
+          await configStorageService.updatePresupCrm(fresh.presupCrm);
+        }
+      }
+    }
     
     // SINCRONIZAR CON ALMACENAMIENTO LOCAL
     try {
@@ -219,6 +271,9 @@ router.put('/', async (req, res) => {
         if (updates.oportunidades) {
           await configStorageService.updateOportunidades(updates.oportunidades);
         }
+        if (updates.presupCrm) {
+          await configStorageService.updatePresupCrm(updates.presupCrm);
+        }
         
         console.log('✅ Configuración sincronizada con almacenamiento local');
       }
@@ -233,7 +288,15 @@ router.put('/', async (req, res) => {
       await restartScheduler();
     }
     
-    res.json(config);
+    const finalDoc = await Configuracion.findOne({ singleton: true });
+    const plain =
+      finalDoc && typeof finalDoc.toObject === 'function'
+        ? finalDoc.toObject({ flattenMaps: true })
+        : JSON.parse(JSON.stringify(finalDoc));
+    const enriched = enrichFilePathsWithPresupCrm(plain);
+    const merged = applyEnvConfigOverrides(enriched);
+    const safe = buildClientSafeConfig(merged);
+    res.json({ ...safe, envSourceHints: getEnvSourceFlags() });
   } catch (error) {
     console.error('Error en PUT /api/config:', error);
     res.status(500).json({ error: error.message });
@@ -293,7 +356,11 @@ router.put('/mappings/:type', async (req, res) => {
     // Si se actualizaron mapeos de talleres ORs Abiertas, refrescar el pivot para aplicar cambios
     if (type === 'orsAbiertasTalleres') {
       try {
-        const orsPath = config?.filePaths?.orsAbiertas || configStorageService.getConfig()?.filePaths?.orsAbiertas;
+        const orsPath =
+          config?.filePaths?.orsAbiertas ||
+          (configStorageService.isInitialized
+            ? configStorageService.getEffectiveConfig()?.filePaths?.orsAbiertas
+            : undefined);
         if (orsPath?.trim()) {
           await refreshORsPivot(orsPath);
           console.log('✅ Pivot de ORs Abiertas actualizado con nuevos mapeos');

@@ -5,6 +5,14 @@ import mongoose from 'mongoose';
 import Venta from '../models/Venta.js';
 import Configuracion from '../models/Configuracion.js';
 import configStorageService from './configStorageService.js';
+import { applyEnvConfigOverrides } from './envConfig.js';
+
+function configuracionToPlain(doc) {
+  if (!doc) return null;
+  return typeof doc.toObject === 'function'
+    ? doc.toObject({ flattenMaps: true })
+    : JSON.parse(JSON.stringify(doc));
+}
 
 /**
  * Lee un archivo Excel y retorna los datos como array de objetos
@@ -39,27 +47,29 @@ export async function procesarVentas() {
   try {
     console.log('💰 Iniciando procesamiento de ventas...');
     
-    // Obtener configuración (intentar desde almacenamiento local primero, luego MongoDB)
+    // Configuración efectiva: archivo/Mongo + FILE_PATH_VENTAS_* del .env (getEffectiveConfig / applyEnvConfigOverrides)
     let config = null;
-    
-    // Intentar desde almacenamiento local
+
     try {
       if (configStorageService.isInitialized) {
-        const localConfig = configStorageService.getConfig();
-        if (localConfig?.ventas?.rutaCtasPV && localConfig?.ventas?.rutaBalances) {
-          config = localConfig;
+        const effective = configStorageService.getEffectiveConfig();
+        if (effective?.ventas?.rutaCtasPV?.trim() && effective?.ventas?.rutaBalances?.trim()) {
+          config = effective;
         }
       }
     } catch (localError) {
-      console.log('ℹ️  No se pudo obtener configuración desde almacenamiento local');
+      console.log('ℹ️  No se pudo obtener configuración efectiva desde almacenamiento local');
     }
-    
-    // Si no hay config local o MongoDB está conectado, intentar desde MongoDB
+
     if (!config && mongoose.connection.readyState === 1) {
       try {
         const dbConfig = await Configuracion.findOne({ singleton: true });
-        if (dbConfig?.ventas?.rutaCtasPV && dbConfig?.ventas?.rutaBalances) {
-          config = dbConfig;
+        const plain = configuracionToPlain(dbConfig);
+        if (plain) {
+          const effective = applyEnvConfigOverrides(plain);
+          if (effective?.ventas?.rutaCtasPV?.trim() && effective?.ventas?.rutaBalances?.trim()) {
+            config = effective;
+          }
         }
       } catch (dbError) {
         console.log('ℹ️  No se pudo obtener configuración desde MongoDB');

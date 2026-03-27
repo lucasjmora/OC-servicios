@@ -1,7 +1,17 @@
 import axios from 'axios';
 
 const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT || (import.meta.env.DEV ? '5000' : '5001');
+
+/**
+ * En desarrollo (Vite), usar `/api` para que las peticiones pasen por el proxy del servidor de Vite
+ * (vite.config.js → target al backend). Así se evita depender de que el navegador abra el puerto
+ * del backend directamente (menos errores de "Network Error" si el proxy está bien configurado).
+ * En preview/producción se usa host + puerto del backend.
+ */
 function getApiBaseUrl() {
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    return '/api';
+  }
   if (typeof window !== 'undefined') {
     return `${window.location.protocol}//${window.location.hostname}:${BACKEND_PORT}/api`;
   }
@@ -64,6 +74,18 @@ export const executeManualImport = () => {
   });
   
   return importApi.post('/import/manual');
+};
+
+/** Importación por módulo: ventas | citas | ingresos | boletos | ors | presupuestos */
+export const postImportModule = (moduleKey) => {
+  const importApi = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    timeout: 600000
+  });
+  return importApi.post(`/import/module/${encodeURIComponent(moduleKey)}`);
 };
 
 export const testConnection = (uri) => 
@@ -297,12 +319,6 @@ export const getAccesoriosStats = () =>
 export const getVentasResumen = (mesKey) => api.get(`/ventas/resumen/${mesKey}`);
 
 export const getVentasMeses = () => api.get('/ventas/meses');
-
-export const procesarVentas = () => api.post('/ventas/procesar');
-
-export const getConfigVentas = () => api.get('/config/ventas');
-
-export const updateConfigVentas = (data) => api.put('/config/ventas', data);
 
 // ===== ORs ABIERTAS =====
 
