@@ -3,7 +3,7 @@ import fs from 'fs';
 import Cita from '../models/Cita.js';
 import Ingreso from '../models/Ingreso.js';
 import Configuracion from '../models/Configuracion.js';
-import { cleanObjectFields } from '../utils/fieldCleaner.js';
+import { cleanObjectFields, normalizeTelefonoCita549 } from '../utils/fieldCleaner.js';
 import { sincronizarBoletos } from './boletosService.js';
 import { procesarVentas } from './ventasService.js';
 
@@ -308,6 +308,9 @@ function processDates(obj, type = 'citas') {
     processed['Hora '] = parseExcelTime(processed['Hora ']);
     if (horaOriginal !== processed['Hora ']) {
       console.log(`Hora procesada: "${horaOriginal}" -> "${processed['Hora ']}"`);
+    }
+    if (Object.prototype.hasOwnProperty.call(processed, 'Telefono')) {
+      processed.Telefono = normalizeTelefonoCita549(processed.Telefono);
     }
   }
   

@@ -182,7 +182,11 @@ class ConfigStorageService {
 
     const normalized = {};
     for (const [k, v] of Object.entries(mappings || {})) {
-      normalized[k] = this._mapToObject(v);
+      if (Array.isArray(v)) {
+        normalized[k] = v;
+      } else {
+        normalized[k] = this._mapToObject(v);
+      }
     }
     this.config.mappings = {
       ...this.config.mappings,
@@ -272,6 +276,7 @@ class ConfigStorageService {
       },
       mappings: {
         talleres: [],
+        talleresOcultos: [],
         usuarios: [],
         campos: {}
       },

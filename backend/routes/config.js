@@ -60,6 +60,53 @@ function desanitizeMappingsFromMongo(obj) {
   return out;
 }
 
+const BOT_ANALYZER_LOCALIDAD_EMPRESAS = ['FC', 'GV', 'PW'];
+
+function defaultBotAnalyzerLocalidadSesion() {
+  return { FC: [], GV: [], PW: [] };
+}
+
+/** Normaliza payload guardado o GET para el front (siempre FC/GV/PW con arrays). */
+function normalizeBotAnalyzerLocalidadSesion(raw) {
+  const base = defaultBotAnalyzerLocalidadSesion();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+  for (const emp of BOT_ANALYZER_LOCALIDAD_EMPRESAS) {
+    const rows = raw[emp];
+    if (!Array.isArray(rows)) continue;
+    base[emp] = rows
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({
+        secuencia: String(r.secuencia ?? '').replace(/\D/g, ''),
+        localidad: String(r.localidad ?? '').trim()
+      }))
+      .filter((r) => r.secuencia && r.localidad);
+  }
+  return base;
+}
+
+/** Valida y normaliza body del PUT (objeto plano, no Map). */
+function parseBotAnalyzerLocalidadSesionBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('El cuerpo debe ser un objeto con claves FC, GV y PW');
+  }
+  const out = defaultBotAnalyzerLocalidadSesion();
+  for (const emp of BOT_ANALYZER_LOCALIDAD_EMPRESAS) {
+    const rows = body[emp];
+    if (rows == null) continue;
+    if (!Array.isArray(rows)) {
+      throw new Error(`botAnalyzerLocalidadSesion.${emp} debe ser un array`);
+    }
+    out[emp] = rows
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => ({
+        secuencia: String(r.secuencia ?? '').replace(/\D/g, ''),
+        localidad: String(r.localidad ?? '').trim()
+      }))
+      .filter((r) => r.secuencia && r.localidad);
+  }
+  return out;
+}
+
 // Obtener configuración actual
 router.get('/', async (req, res) => {
   try {
@@ -79,26 +126,27 @@ router.get('/', async (req, res) => {
       try {
         const dbConfig = await Configuracion.findOne({ singleton: true });
         if (dbConfig) {
-          // Si hay almacenamiento local, sincronizar
+          // Objeto plano: evita pasar subdocumentos Mongoose a update* (spread + JSON a archivo puede romper o crear ciclos).
+          const dbPlain = dbConfig.toObject({ flattenMaps: true });
           if (configStorageService.isInitialized) {
-            await configStorageService.updateMongoConfig(dbConfig.mongodb);
-            if (dbConfig.filePaths) {
-              await configStorageService.updateFilePaths(dbConfig.filePaths);
+            await configStorageService.updateMongoConfig(dbPlain.mongodb || {});
+            if (dbPlain.filePaths) {
+              await configStorageService.updateFilePaths(dbPlain.filePaths);
             }
-            if (dbConfig.scheduler) {
-              await configStorageService.updateScheduler(dbConfig.scheduler);
+            if (dbPlain.scheduler) {
+              await configStorageService.updateScheduler(dbPlain.scheduler);
             }
-            if (dbConfig.mappings) {
-              await configStorageService.updateMappings(dbConfig.mappings);
+            if (dbPlain.mappings) {
+              await configStorageService.updateMappings(dbPlain.mappings);
             }
-            if (dbConfig.asistencia) {
-              await configStorageService.updateAsistencia(dbConfig.asistencia);
+            if (dbPlain.asistencia) {
+              await configStorageService.updateAsistencia(dbPlain.asistencia);
             }
-            if (dbConfig.oportunidades) {
-              await configStorageService.updateOportunidades(dbConfig.oportunidades);
+            if (dbPlain.oportunidades) {
+              await configStorageService.updateOportunidades(dbPlain.oportunidades);
             }
-            if (dbConfig.presupCrm) {
-              await configStorageService.updatePresupCrm(dbConfig.presupCrm);
+            if (dbPlain.presupCrm) {
+              await configStorageService.updatePresupCrm(dbPlain.presupCrm);
             }
             config = configStorageService.getConfig();
           } else {
@@ -120,7 +168,13 @@ router.get('/', async (req, res) => {
               presupuestos: ''
             },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
-            mappings: { talleres: new Map(), usuarios: new Map(), campos: new Map(), orsAbiertasTalleres: new Map() }
+            mappings: {
+              talleres: new Map(),
+              usuarios: new Map(),
+              campos: new Map(),
+              orsAbiertasTalleres: new Map(),
+              botAnalyzerLocalidadSesion: defaultBotAnalyzerLocalidadSesion()
+            }
           });
         }
       } catch (dbError) {
@@ -136,7 +190,13 @@ router.get('/', async (req, res) => {
               presupuestos: ''
             },
             scheduler: { enabled: false, cronExpression: '0 */6 * * *' },
-            mappings: { talleres: [], usuarios: [], campos: {}, orsAbiertasTalleres: {} }
+            mappings: {
+              talleres: [],
+              usuarios: [],
+              campos: {},
+              orsAbiertasTalleres: {},
+              botAnalyzerLocalidadSesion: defaultBotAnalyzerLocalidadSesion()
+            }
           };
         }
       }
@@ -307,18 +367,43 @@ router.put('/', async (req, res) => {
 router.get('/mappings/:type', async (req, res) => {
   try {
     const { type } = req.params; // 'talleres', 'usuarios', 'campos'
-    
+
     const config = await Configuracion.findOne({ singleton: true });
-    
+
     if (!config) {
+      if (type === 'botAnalyzerLocalidadSesion') {
+        return res.json(defaultBotAnalyzerLocalidadSesion());
+      }
+      if (type === 'talleresOcultos') {
+        return res.json({ ocultos: [] });
+      }
       return res.json({});
     }
-    
+
+    if (type === 'botAnalyzerLocalidadSesion') {
+      const raw = config.mappings?.botAnalyzerLocalidadSesion;
+      const plain =
+        raw && typeof raw.toObject === 'function'
+          ? raw.toObject()
+          : raw && typeof raw === 'object'
+            ? { ...raw }
+            : {};
+      return res.json(normalizeBotAnalyzerLocalidadSesion(plain));
+    }
+
+    if (type === 'talleresOcultos') {
+      const raw = config.mappings?.talleresOcultos;
+      const ocultos = Array.isArray(raw)
+        ? raw.map((c) => String(c))
+        : [];
+      return res.json({ ocultos });
+    }
+
     const mappings = config.mappings[type];
-    
+
     // Convertir Map a objeto y restaurar claves originales (MongoDB no permite . o $ al inicio)
     const mappingsObj = mappings ? desanitizeMappingsFromMongo(Object.fromEntries(mappings)) : {};
-    
+
     res.json(mappingsObj);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -330,17 +415,59 @@ router.put('/mappings/:type', async (req, res) => {
   try {
     const { type } = req.params;
     const mappings = req.body;
-    
+
+    if (type === 'botAnalyzerLocalidadSesion') {
+      const parsed = parseBotAnalyzerLocalidadSesionBody(mappings);
+      const config = await Configuracion.findOneAndUpdate(
+        { singleton: true },
+        { $set: { 'mappings.botAnalyzerLocalidadSesion': parsed } },
+        { new: true, upsert: true }
+      );
+      try {
+        if (configStorageService.isInitialized) {
+          const currentMappings = configStorageService.getMappings();
+          currentMappings.botAnalyzerLocalidadSesion = parsed;
+          await configStorageService.updateMappings(currentMappings);
+          console.log('✅ Mapeos botAnalyzerLocalidadSesion sincronizados con almacenamiento local');
+        }
+      } catch (localError) {
+        console.error('⚠️  Error sincronizando mapeos con almacenamiento local:', localError);
+      }
+      return res.json(normalizeBotAnalyzerLocalidadSesion(config?.mappings?.botAnalyzerLocalidadSesion || parsed));
+    }
+
+    if (type === 'talleresOcultos') {
+      const raw = mappings?.ocultos ?? mappings;
+      const ocultos = Array.isArray(raw)
+        ? [...new Set(raw.map((c) => String(c).trim()).filter(Boolean))]
+        : [];
+      const config = await Configuracion.findOneAndUpdate(
+        { singleton: true },
+        { $set: { 'mappings.talleresOcultos': ocultos } },
+        { new: true, upsert: true }
+      );
+      try {
+        if (configStorageService.isInitialized) {
+          const currentMappings = configStorageService.getMappings();
+          currentMappings.talleresOcultos = ocultos;
+          await configStorageService.updateMappings(currentMappings);
+        }
+      } catch (localError) {
+        console.error('⚠️  Error sincronizando talleresOcultos:', localError);
+      }
+      return res.json({ ocultos: config?.mappings?.talleresOcultos || ocultos });
+    }
+
     // Sanitizar claves para MongoDB (no permite . o $ al inicio)
     const mappingsSafe = sanitizeMappingsForMongo(mappings);
     const mappingsMap = new Map(Object.entries(mappingsSafe));
-    
+
     const config = await Configuracion.findOneAndUpdate(
       { singleton: true },
       { $set: { [`mappings.${type}`]: mappingsMap } },
       { new: true, upsert: true }
     );
-    
+
     // Sincronizar con almacenamiento local
     try {
       if (configStorageService.isInitialized) {
@@ -352,7 +479,7 @@ router.put('/mappings/:type', async (req, res) => {
     } catch (localError) {
       console.error('⚠️  Error sincronizando mapeos con almacenamiento local:', localError);
     }
-    
+
     // Si se actualizaron mapeos de talleres ORs Abiertas, refrescar el pivot para aplicar cambios
     if (type === 'orsAbiertasTalleres') {
       try {
@@ -369,7 +496,7 @@ router.put('/mappings/:type', async (req, res) => {
         console.warn('⚠️  No se pudo refrescar pivot ORs Abiertas:', orsError.message);
       }
     }
-    
+
     // Devolver con claves originales (desanitizar)
     const result = config.mappings[type] ? desanitizeMappingsFromMongo(Object.fromEntries(config.mappings[type])) : {};
     res.json(result);

@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getOportunidades, getConfigOportunidades, getMappings, getUniqueValues } from '../services/api';
+import {
+  getOportunidades,
+  getConfigOportunidades,
+  getMappings,
+  getUniqueValues,
+  getTalleresOcultos
+} from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
@@ -73,16 +79,19 @@ const Oportunidades = () => {
 
   const loadTalleresMapping = async () => {
     try {
-      const [mappingsRes, ingresosRes] = await Promise.all([
+      const [mappingsRes, ingresosRes, ocultosRes] = await Promise.all([
         getMappings('talleres'),
-        getUniqueValues('ingresos', 'Taller')
+        getUniqueValues('ingresos', 'Taller'),
+        getTalleresOcultos()
       ]);
       
       const mappings = mappingsRes.data || {};
       setTalleresMapping(mappings);
       
-      // Combinar códigos únicos de talleres
-      const allCodigos = new Set(ingresosRes.data);
+      const ocultosSet = new Set((ocultosRes.data?.ocultos || []).map(String));
+      const allCodigos = new Set(
+        (ingresosRes.data || []).filter((c) => !ocultosSet.has(String(c)))
+      );
       
       // Agrupar talleres por nombre mapeado
       const agrupadosPorNombre = {};

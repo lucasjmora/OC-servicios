@@ -1,19 +1,25 @@
 import axios from 'axios';
 
+/**
+ * Solo para entorno sin `window` (p. ej. pruebas). En el navegador no se usa para la URL base.
+ * Convención repo: dev backend 5000, prod 5001.
+ */
 const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT || (import.meta.env.DEV ? '5000' : '5001');
 
 /**
- * En desarrollo (Vite), usar `/api` para que las peticiones pasen por el proxy del servidor de Vite
- * (vite.config.js → target al backend). Así se evita depender de que el navegador abra el puerto
- * del backend directamente (menos errores de "Network Error" si el proxy está bien configurado).
- * En preview/producción se usa host + puerto del backend.
+ * Base URL del API.
+ * - En navegador: siempre `/api` (mismo host/puerto que la página). Vite dev/preview proxifica
+ *   hacia el backend; así al entrar por IP (ej. 172.30.x.x:3001) no hace falta abrir el 5001 en firewall.
+ * - Opcional `VITE_API_BASE_URL` (p. ej. https://api.midominio.com) si front y API son orígenes distintos sin proxy.
+ * - Sin `window`: localhost + BACKEND_PORT.
  */
 function getApiBaseUrl() {
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
-    return '/api';
+  const forced = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (forced) {
+    return forced.replace(/\/$/, '');
   }
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:${BACKEND_PORT}/api`;
+    return '/api';
   }
   return `http://localhost:${BACKEND_PORT}/api`;
 }
@@ -46,6 +52,12 @@ export const getMappings = (type) => api.get(`/config/mappings/${type}`);
 
 export const updateMappings = (type, mappings) => 
   api.put(`/config/mappings/${type}`, mappings);
+
+/** Códigos de taller a ocultar en filtros (Asistencia, Ingresos, Oportunidades) */
+export const getTalleresOcultos = () => api.get('/config/mappings/talleresOcultos');
+
+export const updateTalleresOcultos = (ocultos) =>
+  api.put('/config/mappings/talleresOcultos', { ocultos });
 
 export const getUniqueValues = (collection, field) =>
   api.get(`/config/unique-values/${collection}/${field}`);

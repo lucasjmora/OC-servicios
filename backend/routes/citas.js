@@ -1,6 +1,7 @@
 import express from 'express';
 import Cita from '../models/Cita.js';
 import Configuracion from '../models/Configuracion.js';
+import { normalizeTelefonoCita549 } from '../utils/fieldCleaner.js';
 
 const router = express.Router();
 
@@ -15,11 +16,13 @@ router.get('/', async (req, res) => {
       search = '',
       taller = '',
       asesor = '',
+      usuario = '',
       fechaDesde = '',
-      fechaHasta = ''
+      fechaHasta = '',
+      telefono = ''
     } = req.query;
     
-    console.log('Parámetros de consulta:', { page, limit, search, taller, asesor, fechaDesde, fechaHasta });
+    console.log('Parámetros de consulta:', { page, limit, search, taller, asesor, usuario, fechaDesde, fechaHasta, telefono });
     
     // Verificar conexión a MongoDB
     const mongoose = (await import('mongoose')).default;
@@ -50,6 +53,25 @@ router.get('/', async (req, res) => {
     // Filtro por asesor
     if (asesor) {
       filters.Asesor = asesor;
+    }
+
+    if (usuario) {
+      filters.Usuario = usuario;
+    }
+
+    if (telefono && String(telefono).trim()) {
+      const norm = normalizeTelefonoCita549(telefono);
+      if (norm) {
+        const numOk = /^\d+$/.test(norm) && Number.isSafeInteger(Number(norm));
+        filters.$and = filters.$and || [];
+        filters.$and.push({
+          $or: [
+            { Telefono: norm },
+            { Telefono: { $regex: norm, $options: 'i' } },
+            ...(numOk ? [{ Telefono: Number(norm) }] : [])
+          ]
+        });
+      }
     }
     
     // Filtro por rango de fechas
@@ -92,6 +114,7 @@ router.get('/', async (req, res) => {
     // Aplicar mapeos
     const citasConMapeos = citas.map(cita => ({
       ...cita,
+      Telefono: normalizeTelefonoCita549(cita.Telefono),
       TallerNombre: talleresMap[cita.Taller] || cita.Taller,
       UsuarioNombre: usuariosMap[cita.Usuario] || cita.Usuario
     }));

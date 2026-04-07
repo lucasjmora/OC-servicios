@@ -1,6 +1,8 @@
 <# OC Servicios - Start Production Mode (PowerShell)
-   Script simple para verificar dependencias y arrancar backend + frontend en producción
-   
+   Script simple para verificar dependencias y arrancar backend + frontend en producción.
+   Puertos: API 5001, Vite preview 3001 (convive con dev en 5000/3000 si start_dev corre en otra sesión).
+   Ejecuta npm run build con VITE_BACKEND_PORT=5001 y luego npm run start:prod (backend + preview).
+
    INSTRUCCIONES DE EJECUCIÓN:
    ===========================
    
@@ -79,10 +81,10 @@ if (-not (Test-Path "node_modules")) {
     npm install
 if ($LASTEXITCODE -ne 0) { Read-Host 'Error en npm install (root). Presiona Enter para salir'; exit 1 }
 }
-if (-not (Test-Path "node_modules\concurrently")) {
-    Write-Host "Instalando concurrently..." -ForegroundColor Gray
-    npm install concurrently --save-dev
-if ($LASTEXITCODE -ne 0) { Read-Host 'Error instalando concurrently. Presiona Enter para salir'; exit 1 }
+if (-not (Test-Path "node_modules\concurrently") -or -not (Test-Path "node_modules\cross-env")) {
+    Write-Host "Instalando dependencias de scripts (concurrently, cross-env)..." -ForegroundColor Gray
+    npm install concurrently cross-env --save-dev
+if ($LASTEXITCODE -ne 0) { Read-Host 'Error en npm install (dev). Presiona Enter para salir'; exit 1 }
 }
 if (-not (Test-Path "backend\node_modules")) {
     Write-Host "Instalando dependencias backend..." -ForegroundColor Gray

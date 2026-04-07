@@ -1,13 +1,38 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import { FaTags, FaSave, FaWarehouse, FaUsers } from 'react-icons/fa';
+import { FaTags, FaSave, FaWarehouse, FaUsers, FaRobot } from 'react-icons/fa';
 import { getMappings, updateMappings, getORsPivot } from '../services/api';
+import {
+  LOCALIDADES_BOT_FORTECAR,
+  LOCALIDADES_BOT_GRANVILLE,
+  LOCALIDADES_BOT_PAMPAWAGEN
+} from '../constants/botAnalyzerLocalidadCodigos';
 import PresupCrmConfigTalleres from './presup-crm/PresupCrmConfigTalleres';
 import ConfigTalleresPanel from '../components/ConfigTalleresPanel';
 import ConfigUsuariosPanel from '../components/ConfigUsuariosPanel';
 
-const VALID_TABS = ['citas', 'ingresos', 'gestion-talleres', 'gestion-usuarios', 'orsAbiertas', 'talleres-presup'];
+const VALID_TABS = [
+  'citas',
+  'ingresos',
+  'gestion-talleres',
+  'gestion-usuarios',
+  'orsAbiertas',
+  'talleres-presup',
+  'bot-analyzer-localidad'
+];
+
+const BOT_ANALYZER_EMPRESAS = [
+  { key: 'FC', label: 'Fortecar (FC)' },
+  { key: 'GV', label: 'Granville (GV)' },
+  { key: 'PW', label: 'Pampa-viajes (PW)' }
+];
+
+const defaultBotAnalyzerLocalidadState = () => ({
+  FC: [],
+  GV: [],
+  PW: []
+});
 
 function tabFromSearchParams(sp) {
   const t = sp.get('tab');
@@ -35,6 +60,7 @@ const ConfigCampos = () => {
   const [mappingsCitas, setMappingsCitas] = useState({});
   const [mappingsIngresos, setMappingsIngresos] = useState({});
   const [mappingsOrsTalleres, setMappingsOrsTalleres] = useState({});
+  const [botAnalyzerLocalidad, setBotAnalyzerLocalidad] = useState(defaultBotAnalyzerLocalidadState);
   const [talleresOrs, setTalleresOrs] = useState([]);
   const [loadingOrs, setLoadingOrs] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -64,15 +90,22 @@ const ConfigCampos = () => {
   const loadMappings = async () => {
     try {
       setLoading(true);
-      const [citasResponse, ingresosResponse, orsResponse] = await Promise.all([
+      const [citasResponse, ingresosResponse, orsResponse, botLocResponse] = await Promise.all([
         getMappings('campos'),
         getMappings('campos'),
-        getMappings('orsAbiertasTalleres')
+        getMappings('orsAbiertasTalleres'),
+        getMappings('botAnalyzerLocalidadSesion')
       ]);
-      
+
       setMappingsCitas(citasResponse.data || {});
       setMappingsIngresos(ingresosResponse.data || {});
       setMappingsOrsTalleres(orsResponse.data || {});
+      const locData = botLocResponse.data || {};
+      setBotAnalyzerLocalidad({
+        FC: Array.isArray(locData.FC) ? locData.FC : [],
+        GV: Array.isArray(locData.GV) ? locData.GV : [],
+        PW: Array.isArray(locData.PW) ? locData.PW : []
+      });
     } catch (error) {
       console.error('Error cargando mapeos:', error);
       setMessage({ type: 'error', text: 'Error cargando mapeos de campos' });
@@ -135,7 +168,8 @@ const ConfigCampos = () => {
       
       await updateMappings('campos', allMappings);
       await updateMappings('orsAbiertasTalleres', mappingsOrsTalleres);
-      
+      await updateMappings('botAnalyzerLocalidadSesion', botAnalyzerLocalidad);
+
       setMessage({ type: 'success', text: 'Mapeos de campos guardados correctamente' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
@@ -144,6 +178,46 @@ const ConfigCampos = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleBotLocChange = (empKey, index, field, value) => {
+    setBotAnalyzerLocalidad((prev) => {
+      const rows = [...(prev[empKey] || [])];
+      const row = { ...rows[index], [field]: value };
+      rows[index] = row;
+      return { ...prev, [empKey]: rows };
+    });
+  };
+
+  const addBotLocRow = (empKey) => {
+    setBotAnalyzerLocalidad((prev) => ({
+      ...prev,
+      [empKey]: [...(prev[empKey] || []), { secuencia: '', localidad: '' }]
+    }));
+  };
+
+  const removeBotLocRow = (empKey, index) => {
+    setBotAnalyzerLocalidad((prev) => ({
+      ...prev,
+      [empKey]: (prev[empKey] || []).filter((_, i) => i !== index)
+    }));
+  };
+
+  /** Copia filas secuencia/localidad entre empresas (ej. Fortecar → Granville). */
+  const copyBotLocalidadFromTo = (fromKey, toKey) => {
+    const src = botAnalyzerLocalidad[fromKey] || [];
+    setBotAnalyzerLocalidad((prev) => ({
+      ...prev,
+      [toKey]: src.map((r) => ({
+        secuencia: r.secuencia != null ? String(r.secuencia) : '',
+        localidad: r.localidad != null ? String(r.localidad) : ''
+      }))
+    }));
+    setMessage({
+      type: 'success',
+      text: `Mapeo ${fromKey} copiado en ${toKey}. Recordá guardar para persistir.`
+    });
+    setTimeout(() => setMessage(null), 4000);
   };
 
   const renderCamposTable = (campos, mappings, tipo) => (
@@ -303,6 +377,21 @@ const ConfigCampos = () => {
             Talleres presup
           </div>
         </button>
+
+        <button
+          type="button"
+          onClick={() => selectTab('bot-analyzer-localidad')}
+          className={`px-6 py-3 font-semibold transition-colors ${
+            activeTab === 'bot-analyzer-localidad'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <FaRobot />
+            Localidad BOT (sessionId)
+          </div>
+        </button>
       </div>
 
       {/* Contenido de tabs */}
@@ -348,6 +437,164 @@ const ConfigCampos = () => {
                 Excel y etiquetas para listado y dashboard (Presup CRM).
               </p>
               <PresupCrmConfigTalleres embedded />
+            </div>
+          )}
+          {activeTab === 'bot-analyzer-localidad' && (
+            <div className="space-y-8">
+              <p className="text-sm text-gray-400">
+                En <strong className="text-gray-300">BOT Analyzer</strong> la localidad se resuelve{' '}
+                <strong className="text-gray-300">primero</strong> por el contenido del chat (herramientas y mensajes).{' '}
+                <strong className="text-gray-300">Si no hay resultado,</strong> se usa este mapeo: prefijo de dígitos
+                del <strong className="text-gray-300">sessionId</strong> desde el 4.º carácter (si varias filas
+                coinciden, gana la más larga).
+              </p>
+              {BOT_ANALYZER_EMPRESAS.map(({ key, label }) => (
+                <div
+                  key={key}
+                  className="bg-background-card border border-gray-700 rounded-lg overflow-hidden"
+                >
+                  <div className="flex items-center justify-between gap-4 px-4 py-3 bg-gray-800 border-b border-gray-700">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">{label}</h3>
+                      {key === 'FC' && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Código de localidad (solo listado Fortecar).
+                        </p>
+                      )}
+                      {key === 'GV' && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Código de localidad (solo listado Granville).
+                        </p>
+                      )}
+                      {key === 'PW' && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Código de localidad (solo listado Pampa-viajes).
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {key === 'GV' && (
+                        <button
+                          type="button"
+                          onClick={() => copyBotLocalidadFromTo('FC', 'GV')}
+                          disabled={!(botAnalyzerLocalidad.FC || []).length}
+                          title={
+                            (botAnalyzerLocalidad.FC || []).length
+                              ? 'Reemplaza el mapeo de Granville con el de Fortecar'
+                              : 'No hay filas en Fortecar para copiar'
+                          }
+                          className="text-sm px-3 py-1.5 rounded-md border border-gray-600 text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Copiar desde Fortecar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => addBotLocRow(key)}
+                        className="text-sm px-3 py-1.5 rounded-md bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                      >
+                        Agregar fila
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-800/80 border-b border-gray-700">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-400 uppercase">
+                            Secuencia (dígitos)
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-semibold text-gray-400 uppercase">
+                            {key === 'FC' || key === 'GV' || key === 'PW' ? 'Código loc.' : 'Localidad'}
+                          </th>
+                          <th className="px-4 py-2 w-24 text-right text-xs font-semibold text-gray-400 uppercase">
+                            —
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-700">
+                        {(botAnalyzerLocalidad[key] || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500">
+                              Sin reglas. Agregue una fila o guarde para persistir cambios.
+                            </td>
+                          </tr>
+                        ) : (
+                          (botAnalyzerLocalidad[key] || []).map((row, index) => {
+                            const listaCodigos =
+                              key === 'FC'
+                                ? LOCALIDADES_BOT_FORTECAR
+                                : key === 'GV'
+                                  ? LOCALIDADES_BOT_GRANVILLE
+                                  : key === 'PW'
+                                    ? LOCALIDADES_BOT_PAMPAWAGEN
+                                    : null;
+                            return (
+                              <tr key={`${key}-${index}`} className="hover:bg-gray-800/40">
+                                <td className="px-4 py-2">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={row.secuencia || ''}
+                                    onChange={(e) =>
+                                      handleBotLocChange(key, index, 'secuencia', e.target.value)
+                                    }
+                                    placeholder="Ej: 2477"
+                                    className="w-full font-mono text-sm"
+                                  />
+                                </td>
+                                <td className="px-4 py-2">
+                                  {listaCodigos ? (
+                                    <select
+                                      value={row.localidad ?? ''}
+                                      onChange={(e) =>
+                                        handleBotLocChange(key, index, 'localidad', e.target.value)
+                                      }
+                                      className="w-full text-sm bg-background border border-gray-600 rounded-md px-3 py-2 text-gray-200"
+                                    >
+                                      <option value="">Seleccionar código…</option>
+                                      {listaCodigos.map((loc) => (
+                                        <option key={loc} value={loc}>
+                                          {loc}
+                                        </option>
+                                      ))}
+                                      {row.localidad &&
+                                        !listaCodigos.includes(row.localidad) && (
+                                          <option value={row.localidad}>
+                                            {row.localidad} (valor guardado no listado)
+                                          </option>
+                                        )}
+                                    </select>
+                                  ) : (
+                                    <input
+                                      type="text"
+                                      value={row.localidad || ''}
+                                      onChange={(e) =>
+                                        handleBotLocChange(key, index, 'localidad', e.target.value)
+                                      }
+                                      placeholder="Nombre de localidad"
+                                      className="w-full text-sm"
+                                    />
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeBotLocRow(key, index)}
+                                    className="text-sm text-status-danger hover:underline"
+                                  >
+                                    Quitar
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </>

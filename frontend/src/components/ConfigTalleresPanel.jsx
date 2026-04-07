@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getMappings, updateMappings, getUniqueValues } from '../services/api';
-import { FaWarehouse, FaCheckCircle, FaExclamationTriangle, FaSave, FaSearch } from 'react-icons/fa';
+import {
+  getMappings,
+  updateMappings,
+  getUniqueValues,
+  getTalleresOcultos,
+  updateTalleresOcultos
+} from '../services/api';
+import { FaWarehouse, FaCheckCircle, FaExclamationTriangle, FaSave, FaSearch, FaEyeSlash } from 'react-icons/fa';
 
 /**
  * Mapeo código de taller (citas/ingresos) → nombre corto.
@@ -9,6 +15,8 @@ import { FaWarehouse, FaCheckCircle, FaExclamationTriangle, FaSave, FaSearch } f
 export default function ConfigTalleresPanel({ embedded = false }) {
   const [talleresCodigos, setTalleresCodigos] = useState([]);
   const [mappings, setMappings] = useState({});
+  /** Códigos marcados como ocultos en filtros de listados */
+  const [ocultos, setOcultos] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
@@ -19,15 +27,18 @@ export default function ConfigTalleresPanel({ embedded = false }) {
     (async () => {
       try {
         setLoading(true);
-        const [citasRes, ingresosRes, mappingsRes] = await Promise.all([
+        const [citasRes, ingresosRes, mappingsRes, ocultosRes] = await Promise.all([
           getUniqueValues('citas', 'Taller'),
           getUniqueValues('ingresos', 'Taller'),
-          getMappings('talleres')
+          getMappings('talleres'),
+          getTalleresOcultos()
         ]);
         if (cancelled) return;
         const allCodigos = new Set([...citasRes.data, ...ingresosRes.data]);
         setTalleresCodigos(Array.from(allCodigos).sort());
         setMappings(mappingsRes.data || {});
+        const lista = ocultosRes.data?.ocultos || [];
+        setOcultos(new Set(lista.map(String)));
       } catch (error) {
         console.error('Error cargando talleres:', error);
         if (!cancelled) setMessage({ type: 'error', text: 'Error cargando datos de talleres' });
@@ -47,11 +58,25 @@ export default function ConfigTalleresPanel({ embedded = false }) {
     }));
   };
 
+  const toggleOculto = (codigo) => {
+    const key = String(codigo);
+    setOcultos((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const handleSaveMappings = async () => {
     try {
       setSaving(true);
-      await updateMappings('talleres', mappings);
-      setMessage({ type: 'success', text: 'Mapeos de talleres guardados correctamente' });
+      const ocultosArr = [...ocultos].sort();
+      await Promise.all([
+        updateMappings('talleres', mappings),
+        updateTalleresOcultos(ocultosArr)
+      ]);
+      setMessage({ type: 'success', text: 'Mapeos y visibilidad de talleres guardados correctamente' });
       setTimeout(() => setMessage(null), 3000);
     } catch {
       setMessage({ type: 'error', text: 'Error guardando mapeos' });
@@ -70,6 +95,8 @@ export default function ConfigTalleresPanel({ embedded = false }) {
     return codigoStr.includes(searchTerm.toLowerCase()) || nombre.includes(searchTerm.toLowerCase());
   });
 
+  const cantidadOcultos = ocultos.size;
+
   if (loading) {
     return (
       <div className={embedded ? 'py-8' : 'p-8'}>
@@ -87,7 +114,10 @@ export default function ConfigTalleresPanel({ embedded = false }) {
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-white">Gestión de Talleres</h1>
-            <p className="text-gray-400 mt-1">Configura los códigos y nombres de los talleres</p>
+            <p className="text-gray-400 mt-1">
+              Configura códigos y nombres. La columna <strong className="text-gray-300">Oculto en filtros</strong>{' '}
+              excluye el taller de los desplegables en Asistencia, Ingresos y Oportunidades.
+            </p>
           </div>
           <button
             type="button"
@@ -106,7 +136,8 @@ export default function ConfigTalleresPanel({ embedded = false }) {
           <p className="text-sm text-gray-400 max-w-3xl">
             Códigos de taller que aparecen en <strong className="text-gray-300">citas</strong> e{' '}
             <strong className="text-gray-300">ingresos</strong>. El nombre se usa en listados, dashboard y
-            exportaciones.
+            exportaciones. <strong className="text-gray-300">Oculto en filtros</strong> excluye el código del
+            desplegable de taller en Asistencia, Ingresos y Oportunidades (los datos siguen existiendo).
           </p>
           <button
             type="button"
@@ -132,7 +163,7 @@ export default function ConfigTalleresPanel({ embedded = false }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <div className="bg-background-card border border-gray-700 rounded-lg p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -162,6 +193,16 @@ export default function ConfigTalleresPanel({ embedded = false }) {
             <FaExclamationTriangle className="text-4xl text-status-warning" />
           </div>
         </div>
+
+        <div className="bg-background-card border border-gray-700 rounded-lg p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-400 text-sm">Ocultos en filtros</p>
+              <p className="text-3xl font-bold text-gray-300 mt-2">{cantidadOcultos}</p>
+            </div>
+            <FaEyeSlash className="text-4xl text-gray-500" />
+          </div>
+        </div>
       </div>
 
       <div className="mb-6">
@@ -188,6 +229,9 @@ export default function ConfigTalleresPanel({ embedded = false }) {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">
                   Nombre del Taller
                 </th>
+                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider w-40">
+                  Oculto en filtros
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider w-32">
                   Estado
                 </th>
@@ -207,6 +251,19 @@ export default function ConfigTalleresPanel({ embedded = false }) {
                       placeholder="Ingrese el nombre del taller..."
                       className="w-full"
                     />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <label
+                      className="inline-flex cursor-pointer items-center justify-center gap-2 text-sm text-gray-300"
+                      title="No listar en filtros de Asistencia, Ingresos u Oportunidades"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={ocultos.has(String(codigo))}
+                        onChange={() => toggleOculto(codigo)}
+                        className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-primary focus:ring-primary"
+                      />
+                    </label>
                   </td>
                   <td className="px-4 py-3">
                     {mappings[codigo] ? (

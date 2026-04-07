@@ -199,7 +199,7 @@ const Dashboard = () => {
     return (
       <Link
         to={link}
-        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block"
+        className="bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem] hover:border-primary transition-all duration-200 block min-w-0 w-full"
       >
         {/* Header con empresa y total en la misma línea */}
         <div className="flex items-center justify-between mb-[0.72rem]">
@@ -222,14 +222,18 @@ const Dashboard = () => {
         
         {/* Desglose por localidad - una sola línea, número debajo de la abreviatura */}
         {!loading && localidades.length > 0 && (
-          <div className="border-t border-gray-700 pt-[0.72rem]">
-            <div className="flex flex-nowrap gap-x-4 justify-center overflow-x-auto">
-              {localidades.map(([localidad, cantidad]) => (
-                <div key={localidad} className="flex flex-col items-center text-center shrink-0 min-w-[60px]">
-                  <span className="text-gray-300 text-sm mb-0.5">{localidad}</span>
-                  <span className="text-yellow-400 font-bold text-lg">{cantidad}</span>
+          <div className="border-t border-gray-700 pt-[0.72rem] -mx-6 px-6 min-w-0">
+            <div className="min-w-0 overflow-x-auto overscroll-x-contain pb-1">
+              <div className="flex justify-center w-max min-w-full">
+                <div className="flex flex-nowrap gap-x-4">
+                  {localidades.map(([localidad, cantidad]) => (
+                    <div key={localidad} className="flex flex-col items-center text-center shrink-0 min-w-[60px]">
+                      <span className="text-gray-300 text-sm mb-0.5">{localidad}</span>
+                      <span className="text-yellow-400 font-bold text-lg">{cantidad}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         )}
@@ -484,7 +488,7 @@ const Dashboard = () => {
       {/* Sección Oportunidades BOT */}
       <div className="mt-[1.08rem] bg-background-card border border-gray-700 rounded-lg px-6 py-[1.08rem]">
         <h2 className="text-xl font-bold text-white mb-[0.72rem]">Oportunidades BOT</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-[1.08rem] min-w-0">
           <StatCard
             empresa="FC"
             nombre={empresaNames.FC}

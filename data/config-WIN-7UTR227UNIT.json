@@ -13,7 +13,7 @@
   },
   "scheduler": {
     "enabled": false,
-    "cronExpression": "0 */2 * * *",
+    "cronExpression": "0 */6 * * *",
     "lastRun": null,
     "nextRun": null
   },
@@ -21,22 +21,17 @@
     "talleres": {
       "1": "GV PE",
       "2": "GV JU",
-      "4": "",
-      "5": "",
       "9": "GV SN",
       "10": "GV SN",
       "15": "GV CO",
       "17": "GV TR",
-      "18": "",
       "41": "FC PE ",
       "42": "FC JU",
       "43": "FC SN",
       "44": "FC CH",
       "45": "FC 9J",
-      "48": "",
       "51": "PW GP",
       "52": "PW SR",
-      "71": "",
       "141": "GV PM",
       "155": "GV CO",
       "177": "GV TR",
@@ -76,218 +71,7 @@
       "PAMPAWAGEN - GENERAL PICO": "PW GP",
       "PAMPAWAGEN - SANTA ROSA": "PW SR",
       "__DOT__GRANVILLE-PEUGEOT BELGRANO MADRYN": "GV PM"
-    },
-    "botAnalyzerLocalidadSesion": {
-      "FC": [
-        {
-          "secuencia": "341",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2477",
-          "localidad": "PE"
-        },
-        {
-          "secuencia": "2362",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2474",
-          "localidad": "PE"
-        },
-        {
-          "secuencia": "2364",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "291",
-          "localidad": "CS"
-        },
-        {
-          "secuencia": "2284",
-          "localidad": "OL"
-        },
-        {
-          "secuencia": "2355",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2352",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "3364",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2324",
-          "localidad": "CH"
-        },
-        {
-          "secuencia": "3407",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "3471",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2392",
-          "localidad": "TL"
-        },
-        {
-          "secuencia": "2227",
-          "localidad": "CH"
-        },
-        {
-          "secuencia": "3474",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2346",
-          "localidad": "CH"
-        },
-        {
-          "secuencia": "3388",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2345",
-          "localidad": "9J"
-        },
-        {
-          "secuencia": "292",
-          "localidad": "CS"
-        },
-        {
-          "secuencia": "2358",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2473",
-          "localidad": "PE"
-        }
-      ],
-      "GV": [
-        {
-          "secuencia": "341",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2477",
-          "localidad": "PE"
-        },
-        {
-          "secuencia": "2362",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2474",
-          "localidad": "PE"
-        },
-        {
-          "secuencia": "2364",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2355",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2352",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "3364",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "3407",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "3471",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "3474",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "3388",
-          "localidad": "SN"
-        },
-        {
-          "secuencia": "2345",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2804",
-          "localidad": "PM"
-        },
-        {
-          "secuencia": "2966",
-          "localidad": "CO"
-        },
-        {
-          "secuencia": "2975",
-          "localidad": "CO"
-        },
-        {
-          "secuencia": "2934",
-          "localidad": "PM"
-        },
-        {
-          "secuencia": "2358",
-          "localidad": "JU"
-        },
-        {
-          "secuencia": "2473",
-          "localidad": "PE"
-        }
-      ],
-      "PW": [
-        {
-          "secuencia": "2954",
-          "localidad": "SR"
-        },
-        {
-          "secuencia": "2302",
-          "localidad": "GP"
-        },
-        {
-          "secuencia": "2953",
-          "localidad": "SR"
-        },
-        {
-          "secuencia": "2334",
-          "localidad": "GP"
-        },
-        {
-          "secuencia": "291",
-          "localidad": "SR"
-        },
-        {
-          "secuencia": "299",
-          "localidad": "SR"
-        },
-        {
-          "secuencia": "351",
-          "localidad": "SR"
-        },
-        {
-          "secuencia": "2392",
-          "localidad": "SR"
-        }
-      ]
-    },
-    "talleresOcultos": [
-      "18",
-      "4",
-      "48",
-      "5",
-      "71"
-    ]
+    }
   },
   "asistencia": {
     "diasTolerancia": 5
@@ -295,7 +79,7 @@
   "lastImport": null,
   "createdAt": "2025-10-11T03:30:40.776Z",
   "updatedAt": "2025-10-11T03:30:40.776Z",
-  "lastUpdated": "2026-04-07T07:26:42.826Z",
+  "lastUpdated": "2026-03-28T06:16:00.805Z",
   "version": "1.0.0",
   "oportunidades": {
     "palabrasClave": "serv",
@@ -376,9 +160,9 @@
     "aceites": [],
     "general": {},
     "lastImport": {
-      "timestamp": "2026-04-07T01:50:44.253Z",
+      "timestamp": "2026-03-28T05:55:14.044Z",
       "status": "success",
-      "rows": 1256,
+      "rows": 1857,
       "error": null
     }
   }

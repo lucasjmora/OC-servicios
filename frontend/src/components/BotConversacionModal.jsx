@@ -55,6 +55,30 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
     }
   };
 
+  const detectarHerramientas = () => {
+    if (herramientasUtilizadas) {
+      return herramientasUtilizadas;
+    }
+    if (!conversation?.messages) return { tieneAgendarTurno: false, tieneEnviarCorreo: false };
+
+    let tieneAgendarTurno = false;
+    let tieneEnviarCorreo = false;
+
+    conversation.messages.forEach((msg) => {
+      if (msg.content && typeof msg.content === 'string') {
+        const c = msg.content;
+        if (c.includes('agendar_turno_v2') || c.includes('agendar_turno')) {
+          tieneAgendarTurno = true;
+        }
+        if (msg.content.includes('enviarCorreo')) {
+          tieneEnviarCorreo = true;
+        }
+      }
+    });
+
+    return { tieneAgendarTurno, tieneEnviarCorreo };
+  };
+
   const handleSubmitComentario = async (e) => {
     e.preventDefault();
     
@@ -101,6 +125,13 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
       return;
     }
 
+    const hUtil =
+      herramientasUtilizadas != null ? herramientasUtilizadas : detectarHerramientas();
+    if (hUtil?.tieneAgendarTurno) {
+      setError('Con cita agendada en el bot (agendar_turno_v2) no se modifica el estado de gestión.');
+      return;
+    }
+
     try {
       setSaving(true);
       setError('');
@@ -136,6 +167,10 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
           Tratado
         </span>
       );
+    }
+
+    if (estado === 'agendado') {
+      return null;
     }
     
     if (estado === 'no_tratado') {
@@ -175,38 +210,9 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
     });
   };
 
-  // Usar herramientas pasadas como prop o detectarlas desde la conversación
-  const detectarHerramientas = () => {
-    // Si vienen como prop, usarlas directamente
-    if (herramientasUtilizadas) {
-      return herramientasUtilizadas;
-    }
-    
-    // Si no, intentar detectarlas desde los mensajes (fallback)
-    if (!conversation?.messages) return { tieneAgendarTurno: false, tieneEnviarCorreo: false };
-    
-    let tieneAgendarTurno = false;
-    let tieneEnviarCorreo = false;
-
-    // Buscar en los mensajes del bot que contengan información de herramientas
-    conversation.messages.forEach(msg => {
-      if (msg.content && typeof msg.content === 'string') {
-        // Buscar referencias a agendar_turno (cualquier versión)
-        if (msg.content.includes('agendar_turno')) {
-          tieneAgendarTurno = true;
-        }
-        if (msg.content.includes('enviarCorreo')) {
-          tieneEnviarCorreo = true;
-        }
-      }
-    });
-
-    return { tieneAgendarTurno, tieneEnviarCorreo };
-  };
-
   const herramientas = detectarHerramientas();
-  // Elegible: todas las que NO ejecutaron agendar_turno (cualquier versión)
-  const esElegible = !herramientas.tieneAgendarTurno;
+  /** Gestión de estado/comentarios para cualquier sesión (alineado con filtro y API de gestión). */
+  const esElegible = true;
 
   if (!empresa || !sessionId) return null;
 
@@ -238,6 +244,8 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
   }
 
   const estadoActual = gestion?.estado || 'no_tratado';
+  const tieneAgendarOperativo = herramientas.tieneAgendarTurno === true;
+  const estadoEfectivo = tieneAgendarOperativo ? 'agendado' : estadoActual;
   const logs = gestion?.logs || [];
 
   return (
@@ -366,7 +374,12 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
               {esElegible && (
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-2">Estado Actual</label>
-                  {getEstadoBadge(estadoActual)}
+                  {getEstadoBadge(estadoEfectivo)}
+                  {tieneAgendarOperativo && (
+                    <p className="text-xs text-sky-200/90 mt-2">
+                      Hubo cita agendada en el bot (agendar_turno_v2): no aplica gestión tratado / no tratado; el registro en base puede seguir mostrando otro valor solo para historial.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -377,65 +390,71 @@ const BotConversacionModal = ({ empresa, sessionId, herramientasUtilizadas, onCl
               <div className="mb-6">
                 <h3 className="text-lg font-medium text-white mb-4">Estado Actual</h3>
                 <div className="flex items-center gap-2">
-                  {getEstadoBadge(estadoActual)}
+                  {getEstadoBadge(estadoEfectivo)}
                 </div>
               </div>
 
-              <form onSubmit={handleCambioEstado} className="space-y-4">
-                <h3 className="text-lg font-medium text-white">Cambiar Estado</h3>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Estado *
-                  </label>
-                  <select
-                    value={cambioEstado.estado}
-                    onChange={(e) => setCambioEstado(prev => ({ ...prev, estado: e.target.value }))}
-                    className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-                    disabled={saving}
+              {!tieneAgendarOperativo ? (
+                <form onSubmit={handleCambioEstado} className="space-y-4">
+                  <h3 className="text-lg font-medium text-white">Cambiar Estado</h3>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Estado *
+                    </label>
+                    <select
+                      value={cambioEstado.estado}
+                      onChange={(e) => setCambioEstado(prev => ({ ...prev, estado: e.target.value }))}
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                      disabled={saving}
+                    >
+                      <option value="">Seleccionar estado</option>
+                      <option value="tratado">Tratado</option>
+                      <option value="no_tratado">No tratado</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Usuario *
+                    </label>
+                    <input
+                      type="text"
+                      value={cambioEstado.usuario}
+                      onChange={(e) => setCambioEstado(prev => ({ ...prev, usuario: e.target.value }))}
+                      placeholder="Nombre del usuario"
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                      disabled={saving}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Comentario * <span className="text-red-400">(Obligatorio)</span>
+                    </label>
+                    <textarea
+                      value={cambioEstado.comentario}
+                      onChange={(e) => setCambioEstado(prev => ({ ...prev, comentario: e.target.value }))}
+                      placeholder="Ingrese un comentario para el cambio de estado..."
+                      rows={4}
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                      disabled={saving}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={saving || !cambioEstado.estado || !cambioEstado.usuario || !cambioEstado.comentario?.trim()}
+                    className="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="">Seleccionar estado</option>
-                    <option value="tratado">Tratado</option>
-                    <option value="no_tratado">No tratado</option>
-                  </select>
+                    {saving ? 'Guardando...' : 'Cambiar Estado'}
+                  </button>
+                </form>
+              ) : (
+                <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 text-sm text-gray-400">
+                  No aplica cambiar el estado de gestión: la cita quedó tomada en el bot con agendar_turno_v2. Podés usar la pestaña Comentarios si necesitás dejar una nota interna.
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Usuario *
-                  </label>
-                  <input
-                    type="text"
-                    value={cambioEstado.usuario}
-                    onChange={(e) => setCambioEstado(prev => ({ ...prev, usuario: e.target.value }))}
-                    placeholder="Nombre del usuario"
-                    className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-                    disabled={saving}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Comentario * <span className="text-red-400">(Obligatorio)</span>
-                  </label>
-                  <textarea
-                    value={cambioEstado.comentario}
-                    onChange={(e) => setCambioEstado(prev => ({ ...prev, comentario: e.target.value }))}
-                    placeholder="Ingrese un comentario para el cambio de estado..."
-                    rows={4}
-                    className="w-full px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-                    disabled={saving}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={saving || !cambioEstado.estado || !cambioEstado.usuario || !cambioEstado.comentario?.trim()}
-                  className="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Guardando...' : 'Cambiar Estado'}
-                </button>
-              </form>
+              )}
             </div>
           )}
 

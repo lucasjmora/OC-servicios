@@ -1,6 +1,7 @@
 <# OC Servicios - Start Development Mode (PowerShell)
-   Script mejorado con manejo robusto de errores y liberación de puertos
-   
+   Puertos: este script usa solo DESARROLLO → frontend 3000, API 5000.
+   En PRODUCCIÓN se usan frontend 3001 y API 5001 (ver README y .env.example).
+
    INSTRUCCIONES DE EJECUCIÓN:
    ===========================
    

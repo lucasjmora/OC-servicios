@@ -40,6 +40,11 @@ const configuracionSchema = new mongoose.Schema({
       of: String,
       default: new Map()
     },
+    /** Códigos de taller (citas/ingresos) ocultos en filtros de listados (Asistencia, Ingresos, Oportunidades) */
+    talleresOcultos: {
+      type: [String],
+      default: []
+    },
     usuarios: {
       type: Map,
       of: String,
@@ -54,6 +59,11 @@ const configuracionSchema = new mongoose.Schema({
       type: Map,
       of: String,
       default: new Map()
+    },
+    /** BOT Analyzer: reglas sessionId (dígitos desde 4.º carácter) → localidad por empresa */
+    botAnalyzerLocalidadSesion: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ FC: [], GV: [], PW: [] })
     }
   },
   

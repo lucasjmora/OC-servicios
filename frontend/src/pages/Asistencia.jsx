@@ -1,7 +1,7 @@
 import React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getAsistencia, getMappings, getUniqueValues } from '../services/api';
+import { getAsistencia, getMappings, getUniqueValues, getTalleresOcultos } from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
@@ -19,7 +19,10 @@ const Asistencia = () => {
   const [talleresMapping, setTalleresMapping] = useState({});
   const [talleresList, setTalleresList] = useState([]);
   const [talleresAgrupados, setTalleresAgrupados] = useState([]); // Talleres agrupados por nombre
-  
+
+  /** Evita que una respuesta lenta (petición anterior) pise la lista con filtros viejos. */
+  const loadAsistenciaSeqRef = useRef(0);
+
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 25, // Fijo en 25 citas por página
@@ -27,17 +30,23 @@ const Asistencia = () => {
     totalPages: 0
   });
   
-  // Calcular fechas por defecto: últimos 7 días hasta ayer
+  /** YYYY-MM-DD en calendario local (no usar toISOString: desplaza el día en UTC−). */
+  const formatDateLocalISO = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  // Calcular fechas por defecto: últimos 7 días hasta ayer (hora local)
   const getDefaultDates = () => {
-    const fechaActual = new Date();
     const ayer = new Date();
-    ayer.setDate(ayer.getDate() - 1); // Día previo al actual
+    ayer.setDate(ayer.getDate() - 1);
     const hace7Dias = new Date();
-    hace7Dias.setDate(hace7Dias.getDate() - 7); // 7 días atrás
-    
+    hace7Dias.setDate(hace7Dias.getDate() - 7);
     return {
-      fechaDesde: hace7Dias.toISOString().split('T')[0], // Formato YYYY-MM-DD
-      fechaHasta: ayer.toISOString().split('T')[0] // Día previo al actual
+      fechaDesde: formatDateLocalISO(hace7Dias),
+      fechaHasta: formatDateLocalISO(ayer)
     };
   };
   
@@ -47,8 +56,13 @@ const Asistencia = () => {
     taller: '',
     nombre: '',
     matricula: '',
-    estadoAsistencia: 'todos' // 'todos', 'asistio', 'noAsistio'
+    estadoAsistencia: 'todos' // 'todos' | 'asistio' | 'noAsistio'
   });
+
+  const filtersRef = useRef(filters);
+  const paginationRef = useRef(pagination);
+  filtersRef.current = filters;
+  paginationRef.current = pagination;
 
   // Leer parámetros de la URL al montar el componente (después de cargar talleres)
   useEffect(() => {
@@ -56,7 +70,7 @@ const Asistencia = () => {
     
     const fechaDesde = searchParams.get('fechaDesde');
     const fechaHasta = searchParams.get('fechaHasta');
-    const estadoAsistencia = searchParams.get('estadoAsistencia');
+    const estadoAsistenciaParam = searchParams.get('estadoAsistencia');
     const tallerParam = searchParams.get('taller');
     
     // Convertir nombre de taller a códigos numéricos si es necesario
@@ -72,20 +86,16 @@ const Asistencia = () => {
       }
     }
     
-    if (fechaDesde || fechaHasta || estadoAsistencia || tallerCodigos) {
+    if (fechaDesde || fechaHasta || estadoAsistenciaParam || tallerCodigos) {
       setFilters(prev => ({
         ...prev,
         ...(fechaDesde && { fechaDesde }),
         ...(fechaHasta && { fechaHasta }),
-        ...(estadoAsistencia && { estadoAsistencia }),
+        ...(estadoAsistenciaParam && { estadoAsistencia: estadoAsistenciaParam }),
         ...(tallerCodigos && { taller: tallerCodigos })
       }));
     }
   }, [searchParams, talleresAgrupados]);
-
-  useEffect(() => {
-    loadAsistencia();
-  }, [pagination.page, filters.fechaDesde, filters.fechaHasta, filters.taller, filters.nombre, filters.matricula, filters.estadoAsistencia, filters.search]);
 
   useEffect(() => {
     loadTalleresMapping();
@@ -93,20 +103,20 @@ const Asistencia = () => {
 
   const loadTalleresMapping = async () => {
     try {
-      const [mappingsRes, citasRes, ingresosRes] = await Promise.all([
+      const [mappingsRes, citasRes, ingresosRes, ocultosRes] = await Promise.all([
         getMappings('talleres'),
         getUniqueValues('citas', 'Taller'),
-        getUniqueValues('ingresos', 'Taller')
+        getUniqueValues('ingresos', 'Taller'),
+        getTalleresOcultos()
       ]);
       
       const mappings = mappingsRes.data || {};
       setTalleresMapping(mappings);
       
-      // Combinar códigos únicos de talleres
-      const allCodigos = new Set([
-        ...citasRes.data,
-        ...ingresosRes.data
-      ]);
+      const ocultosSet = new Set((ocultosRes.data?.ocultos || []).map(String));
+      const allCodigos = new Set(
+        [...citasRes.data, ...ingresosRes.data].filter((c) => !ocultosSet.has(String(c)))
+      );
       
       setTalleresList(Array.from(allCodigos).sort());
       
@@ -134,46 +144,56 @@ const Asistencia = () => {
     }
   };
 
-  const loadAsistencia = async () => {
+  const loadAsistencia = useCallback(async () => {
+    const seq = ++loadAsistenciaSeqRef.current;
+    const f = filtersRef.current;
+    const p = paginationRef.current;
     try {
       setLoading(true);
       const params = {
-        page: pagination.page,
-        limit: pagination.limit,
-        ...filters
+        page: p.page,
+        limit: p.limit,
+        estadoAsistencia: f.estadoAsistencia,
+        fechaDesde: f.fechaDesde,
+        fechaHasta: f.fechaHasta,
+        taller: f.taller,
+        nombre: f.nombre,
+        matricula: f.matricula,
+        search: f.search
       };
-      
+
       const response = await getAsistencia(params);
-      
-      // Log temporal para debugging
-      const datosDebug = {
-        total: response.data.pagination?.total,
-        citasEnPagina: response.data.data?.length,
-        primeraCita: response.data.data?.[0] ? {
-          referencia: response.data.data[0].Referencia,
-          tieneAsistencia: response.data.data[0].tieneAsistencia,
-          tipoTieneAsistencia: typeof response.data.data[0].tieneAsistencia,
-          estado: response.data.data[0].estado,
-          subEstado: response.data.data[0].subEstado
-        } : null,
-        todasTienenCampo: response.data.data?.every(c => 'tieneAsistencia' in c),
-        conAsistencia: response.data.data?.filter(c => c.tieneAsistencia === true).length,
-        sinAsistencia: response.data.data?.filter(c => c.tieneAsistencia === false).length
-      };
-      console.log('📊 Datos recibidos de la API:', JSON.stringify(datosDebug, null, 2));
-      console.log('📊 Primera cita completa:', response.data.data?.[0]);
-      
-      setCitas(response.data.data);
+      if (seq !== loadAsistenciaSeqRef.current) return;
+
+      setCitas(response.data.data ?? []);
       setPagination(prev => ({
         ...prev,
         ...response.data.pagination
       }));
     } catch (error) {
-      console.error('Error cargando asistencia:', error);
+      if (seq === loadAsistenciaSeqRef.current) {
+        console.error('Error cargando asistencia:', error);
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadAsistenciaSeqRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadAsistencia();
+  }, [
+    loadAsistencia,
+    pagination.page,
+    filters.fechaDesde,
+    filters.fechaHasta,
+    filters.taller,
+    filters.nombre,
+    filters.matricula,
+    filters.estadoAsistencia,
+    filters.search
+  ]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -321,34 +341,42 @@ const Asistencia = () => {
       header: 'Estado Cita',
       key: 'estado',
       render: (estado, row) => {
+        if (row.tieneAsistencia === true) {
+          return null;
+        }
         return getEstadoBadge(row.estado || 'abierto', row.subEstado);
       }
     },
     {
       header: 'Acciones',
       key: 'acciones',
-      render: (value, row) => (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleViewCita(row)}
-            className="p-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-            title="Gestionar cita"
-          >
-            <FaEye />
-          </button>
-          
-          <div className="flex items-center gap-1">
-            <FaComment className="text-gray-400" />
-            <span className="text-gray-400 text-sm">{row.totalComentarios || 0}</span>
-          </div>
-          
-          {row.alarma?.activa && (
-            <div className="p-2 bg-orange-600 text-white rounded-lg" title="Alarma activa">
-              <FaBell />
+      render: (value, row) => {
+        if (row.tieneAsistencia === true) {
+          return null;
+        }
+        return (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleViewCita(row)}
+              className="p-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              title="Gestionar cita"
+            >
+              <FaEye />
+            </button>
+            
+            <div className="flex items-center gap-1">
+              <FaComment className="text-gray-400" />
+              <span className="text-gray-400 text-sm">{row.totalComentarios || 0}</span>
             </div>
-          )}
-        </div>
-      )
+            
+            {row.alarma?.activa && (
+              <div className="p-2 bg-orange-600 text-white rounded-lg" title="Alarma activa">
+                <FaBell />
+              </div>
+            )}
+          </div>
+        );
+      }
     }
   ];
 

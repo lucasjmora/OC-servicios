@@ -53,6 +53,20 @@ export function formatPhoneArgentina(phone) {
   return cleaned;
 }
 
-
-
+/**
+ * Teléfono de citas: solo dígitos, prefijo móvil AR 549 (54 + 9).
+ */
+export function normalizeTelefonoCita549(raw) {
+  if (raw == null || raw === '') return '';
+  const s =
+    typeof raw === 'number' && Number.isFinite(raw)
+      ? String(Math.trunc(raw))
+      : String(raw);
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('549')) return digits;
+  if (digits.startsWith('54')) return '549' + digits.slice(2);
+  if (digits.startsWith('9')) return '54' + digits;
+  return '549' + digits;
+}
 

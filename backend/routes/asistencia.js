@@ -127,6 +127,8 @@ router.get('/', async (req, res) => {
     const result = await getCitasConAsistencia(filters, pagination);
     console.log(`✅ getCitasConAsistencia completado: ${result.data?.length || 0} citas devueltas`);
 
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
     res.json({
       success: true,
       data: result.data,

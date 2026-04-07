@@ -1,8 +1,18 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Rutas absolutas: en Windows + carpetas sincronizadas (OneDrive), los cwd relativos
+ * a veces fallan con UNKNOWN al leer durante el scan de Tailwind.
+ */
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    path.join(__dirname, 'index.html'),
+    path.join(__dirname, 'src/**/*.js'),
+    path.join(__dirname, 'src/**/*.jsx'),
   ],
   theme: {
     extend: {

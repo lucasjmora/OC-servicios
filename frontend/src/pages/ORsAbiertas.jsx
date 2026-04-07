@@ -1,13 +1,51 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import PageHeader from '../components/PageHeader';
 import { FaFileInvoice, FaExclamationTriangle, FaChevronDown, FaChevronUp, FaFileExport } from 'react-icons/fa';
 import { getORsPivot, getMappings } from '../services/api';
+
+const EMPRESAS_OR = ['FC', 'GV', 'PW'];
+const CARGO_COLUMNS = [
+  { key: 'cliente', label: 'Cliente' },
+  { key: 'garantia', label: 'Garantía' },
+  { key: 'internas', label: 'Internas' }
+];
+
+function parseOrderBase(v) {
+  if (typeof v === 'number' && !Number.isNaN(v)) return v;
+  if (v === null || v === undefined || v === '' || v === '-') return 0;
+  const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
+  return Number.isNaN(n) ? 0 : n;
+}
+
+/** Importe en pantalla/CSV: sin decimales (maneja número o texto estilo es-AR). */
+function formatImporteSinDecimales(v) {
+  if (v === '-' || v === null || v === undefined || v === '') return v ?? '-';
+  const n = parseOrderBase(v);
+  return Math.round(n).toLocaleString('es-AR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
+}
+
+function empresaDesdeTaller(mappedName) {
+  const token = String(mappedName).trim().split(/\s+/)[0]?.toUpperCase() || '';
+  return EMPRESAS_OR.includes(token) ? token : null;
+}
+
+function cargoTipoOrden(tipo) {
+  const t = String(tipo ?? '').trim();
+  if (!t || t === '-') return null;
+  const c = t[0];
+  if (c === '1') return 'cliente';
+  if (c === '2') return 'garantia';
+  if (c === '3') return 'internas';
+  return null;
+}
 
 const ORsAbiertas = () => {
   const [pivot, setPivot] = useState(null);
   const [tallerMappings, setTallerMappings] = useState({});
   const [filterTaller, setFilterTaller] = useState([]);
   const [filterTipo, setFilterTipo] = useState([]);
+  const [filterReferencia, setFilterReferencia] = useState('');
+  const [filterDesAveria, setFilterDesAveria] = useState('');
   const [sortBy, setSortBy] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [tallerDropdownOpen, setTallerDropdownOpen] = useState(false);
@@ -18,7 +56,7 @@ const ORsAbiertas = () => {
   const [cuadroHeight, setCuadroHeight] = useState(null);
   const cuadroRef = useRef(null);
 
-  const mapTaller = (nombre) => {
+  const mapTaller = useCallback((nombre) => {
     if (!nombre || typeof nombre !== 'string') return nombre;
     const key = String(nombre).trim();
     let mapped = tallerMappings[key]?.trim();
@@ -38,7 +76,7 @@ const ORsAbiertas = () => {
       if (mapped) return mapped;
     }
     return nombre;
-  };
+  }, [tallerMappings]);
 
   const talleresOpciones = (pivot?.talleres || []).filter(t => t !== 'Total');
   const tiposOpciones = (pivot?.tiposOrden || []).filter(t => t !== 'Total');
@@ -51,46 +89,87 @@ const ORsAbiertas = () => {
     return isNaN(n) ? -Infinity : n;
   };
 
-  let filteredOrders = (pivot?.orders || []).filter(order => {
-    if (filterTaller.length > 0 && !filterTaller.includes(mapTaller(order.nombreTaller))) return false;
-    const tipoVal = order.tipo || '-';
-    if (filterTipo.length > 0 && !filterTipo.includes(tipoVal)) return false;
-    return true;
-  });
+  const refQ = filterReferencia.trim().toLowerCase();
+  const averiaQ = filterDesAveria.trim().toLowerCase();
 
-  if (sortBy) {
-    const keyMap = { dias: 'dias', MO: 'manoObra', Rep: 'totalMaterial', TOT: 'subarrenda', Total: 'base' };
-    const key = keyMap[sortBy];
-    if (key) {
-      const mult = sortDir === 'desc' ? 1 : -1;
-      filteredOrders = [...filteredOrders].sort((a, b) => {
-        const va = getSortValue(a, key);
-        const vb = getSortValue(b, key);
-        return mult * (vb - va);
-      });
+  const filteredOrders = useMemo(() => {
+    let list = (pivot?.orders || []).filter((order) => {
+      if (filterTaller.length > 0 && !filterTaller.includes(mapTaller(order.nombreTaller))) return false;
+      const tipoVal = order.tipo || '-';
+      if (filterTipo.length > 0 && !filterTipo.includes(tipoVal)) return false;
+      if (refQ) {
+        const ref = String(order.referencia ?? '').toLowerCase();
+        if (!ref.includes(refQ)) return false;
+      }
+      if (averiaQ) {
+        const da = String(order.desAveria ?? '').toLowerCase();
+        if (!da.includes(averiaQ)) return false;
+      }
+      return true;
+    });
+
+    if (sortBy) {
+      const keyMap = { dias: 'dias', MO: 'manoObra', Rep: 'totalMaterial', TOT: 'subarrenda', Total: 'base' };
+      const key = keyMap[sortBy];
+      if (key) {
+        const mult = sortDir === 'desc' ? 1 : -1;
+        list = [...list].sort((a, b) => {
+          const va = getSortValue(a, key);
+          const vb = getSortValue(b, key);
+          return mult * (vb - va);
+        });
+      }
     }
-  }
+    return list;
+  }, [pivot?.orders, filterTaller, filterTipo, refQ, averiaQ, sortBy, sortDir, mapTaller]);
 
-  const filtersActive = filterTaller.length > 0 || filterTipo.length > 0;
+  const empresaCargoMatrix = useMemo(() => {
+    const cell = () => ({ count: 0, sumBase: 0 });
+    const grid = {};
+    for (const e of EMPRESAS_OR) {
+      grid[e] = { cliente: cell(), garantia: cell(), internas: cell() };
+    }
+    for (const order of filteredOrders) {
+      const emp = empresaDesdeTaller(mapTaller(order.nombreTaller));
+      const cat = cargoTipoOrden(order.tipo);
+      if (!emp || !cat) continue;
+      grid[emp][cat].count += 1;
+      grid[emp][cat].sumBase += parseOrderBase(order.base);
+    }
+    const colTotals = { cliente: cell(), garantia: cell(), internas: cell() };
+    const rowTotals = {};
+    for (const e of EMPRESAS_OR) {
+      rowTotals[e] = cell();
+      for (const { key: ck } of CARGO_COLUMNS) {
+        colTotals[ck].count += grid[e][ck].count;
+        colTotals[ck].sumBase += grid[e][ck].sumBase;
+        rowTotals[e].count += grid[e][ck].count;
+        rowTotals[e].sumBase += grid[e][ck].sumBase;
+      }
+    }
+    const grand = cell();
+    for (const e of EMPRESAS_OR) {
+      grand.count += rowTotals[e].count;
+      grand.sumBase += rowTotals[e].sumBase;
+    }
+    return { grid, colTotals, rowTotals, grand };
+  }, [filteredOrders, mapTaller]);
 
-  const parseOrderAmount = (v) => {
-    if (typeof v === 'number' && !Number.isNaN(v)) return v;
-    if (v === null || v === undefined || v === '' || v === '-') return 0;
-    const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
-    return Number.isNaN(n) ? 0 : n;
-  };
+  const filtersActive =
+    filterTaller.length > 0 || filterTipo.length > 0 || refQ.length > 0 || averiaQ.length > 0;
 
   const columnTotals = filteredOrders.reduce(
     (acc, o) => ({
-      mo: acc.mo + parseOrderAmount(o.manoObra),
-      rep: acc.rep + parseOrderAmount(o.totalMaterial),
-      tot: acc.tot + parseOrderAmount(o.subarrenda),
-      total: acc.total + parseOrderAmount(o.base)
+      mo: acc.mo + parseOrderBase(o.manoObra),
+      rep: acc.rep + parseOrderBase(o.totalMaterial),
+      tot: acc.tot + parseOrderBase(o.subarrenda),
+      total: acc.total + parseOrderBase(o.base)
     }),
     { mo: 0, rep: 0, tot: 0, total: 0 }
   );
 
-  const formatTotalCell = (n) => n.toLocaleString('es-AR');
+  const formatTotalCell = (n) =>
+    Math.round(Number(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
 
   const handleSort = (col) => {
     if (sortBy !== col) {
@@ -130,12 +209,8 @@ const ORsAbiertas = () => {
   const handleClearFilters = () => {
     setFilterTaller([]);
     setFilterTipo([]);
-  };
-
-  const formatCsvValue = (val) => {
-    if (val === null || val === undefined || val === '') return '';
-    if (typeof val === 'number') return val.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return String(val).replace(/"/g, '""');
+    setFilterReferencia('');
+    setFilterDesAveria('');
   };
 
   const handleExportCsv = () => {
@@ -150,10 +225,10 @@ const ORsAbiertas = () => {
       quote(order.referencia),
       quote(order.tipo || '-'),
       quote(order.desAveria || '-'),
-      quote(typeof order.manoObra === 'number' ? formatCsvValue(order.manoObra) : order.manoObra),
-      quote(typeof order.totalMaterial === 'number' ? formatCsvValue(order.totalMaterial) : order.totalMaterial),
-      quote(typeof order.subarrenda === 'number' ? formatCsvValue(order.subarrenda) : order.subarrenda),
-      quote(typeof order.base === 'number' ? formatCsvValue(order.base) : order.base)
+      quote(formatImporteSinDecimales(order.manoObra)),
+      quote(formatImporteSinDecimales(order.totalMaterial)),
+      quote(formatImporteSinDecimales(order.subarrenda)),
+      quote(formatImporteSinDecimales(order.base))
     ]);
     const csvContent = [
       headers.map(quote).join(','),
@@ -177,7 +252,7 @@ const ORsAbiertas = () => {
     ro.observe(el);
     setCuadroHeight(el.offsetHeight);
     return () => ro.disconnect();
-  }, [hasData]);
+  }, [hasData, pivot?.talleres, pivot?.tiposOrden, pivot?.lastUpdated]);
 
   const loadPivot = async () => {
     try {
@@ -233,20 +308,27 @@ const ORsAbiertas = () => {
       )}
 
       {!loading && !error && hasData && (
-        <div className="mt-8 flex flex-row gap-4 items-start">
-          {/* Cuadro pivot a la izquierda */}
-          <div ref={cuadroRef} className="flex-shrink-0 bg-background-card border border-gray-700 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-max">
+        <div className="mt-8 grid grid-cols-2 gap-4 items-start w-full min-w-0">
+          {/* Dos columnas del mismo ancho; izquierda: pivot + resumen por empresa */}
+          <div ref={cuadroRef} className="flex min-w-0 w-full flex-col gap-4">
+          <div className="w-full min-w-0 bg-background-card border border-gray-700 rounded-lg overflow-hidden">
+            <div className="w-full min-w-0 overflow-x-auto">
+              <table className="w-full table-fixed border-collapse">
+                <colgroup>
+                  <col style={{ width: '12%' }} />
+                  {pivot.tiposOrden.map((tipo) => (
+                    <col key={tipo} style={{ width: `${88 / Math.max(pivot.tiposOrden.length, 1)}%` }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-gray-800 border-b border-gray-700">
                   <tr>
-                    <th className="w-32 px-2 py-1.5 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-gray-800 z-10">
+                    <th className="px-2 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-800 z-10 align-middle">
                       Taller
                     </th>
                     {pivot.tiposOrden.map((tipo) => (
                       <th
                         key={tipo}
-                        className="px-2 py-1.5 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider whitespace-nowrap"
+                        className="px-1.5 py-2 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider align-middle"
                       >
                         {tipo}
                       </th>
@@ -259,22 +341,22 @@ const ORsAbiertas = () => {
                       key={taller}
                       className={taller === 'Total' ? 'bg-gray-800/80 font-bold' : idx % 2 === 0 ? 'bg-gray-900/30' : 'bg-gray-900/10'}
                     >
-                      <td className="w-32 px-2 py-1.5 text-sm text-gray-300 whitespace-nowrap sticky left-0 bg-inherit z-10 truncate" title={taller}>
+                      <td className="px-2 py-2 text-sm text-gray-300 sticky left-0 bg-inherit z-10 truncate align-middle" title={taller}>
                         {taller}
                       </td>
                       {pivot.tiposOrden.map((tipo) => (
                         <td
                           key={tipo}
-                          className={`px-2 py-1.5 text-sm text-center ${taller === 'Total' || tipo === 'Total' ? 'font-bold text-white' : 'text-gray-300'}`}
+                          className={`px-1.5 py-2 text-sm text-center align-middle ${taller === 'Total' || tipo === 'Total' ? 'font-bold text-white' : 'text-gray-300'}`}
                         >
                           {(() => {
                             const count = pivot.data[taller]?.[tipo] ?? 0;
                             if (count === 0) return '';
-                            const baseMillones = (pivot.sumBase?.[taller]?.[tipo] ?? 0) / 1000000;
+                            const baseMillones = Math.round((pivot.sumBase?.[taller]?.[tipo] ?? 0) / 1000000);
                             return (
                               <span className="flex flex-col items-center">
                                 <span>{count}</span>
-                                <span className="text-xs text-gray-400">${baseMillones.toFixed(2)} M</span>
+                                <span className="text-xs text-gray-400">${baseMillones} M</span>
                               </span>
                             );
                           })()}
@@ -292,8 +374,119 @@ const ORsAbiertas = () => {
             )}
           </div>
 
-          {/* Tabla detalle a la derecha - mismo alto que el cuadro, scroll vertical */}
-          <div className="flex-1 min-w-0 bg-background-card border border-gray-700 rounded-lg overflow-hidden flex flex-col" style={cuadroHeight ? { height: cuadroHeight } : undefined}>
+          <div className="w-full min-w-0 bg-background-card border border-gray-700 rounded-lg overflow-hidden">
+            <div className="px-2 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider border-b border-gray-700 bg-gray-800/50">
+              Por empresa y orden
+            </div>
+            <div className="w-full min-w-0 overflow-x-auto">
+              <table className="w-full table-fixed border-collapse">
+                <colgroup>
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '20.5%' }} />
+                  <col style={{ width: '20.5%' }} />
+                  <col style={{ width: '20.5%' }} />
+                  <col style={{ width: '20.5%' }} />
+                </colgroup>
+                <thead className="bg-gray-800 border-b border-gray-700">
+                  <tr>
+                    <th className="px-2 py-2 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-800 z-10 align-middle">
+                      Empresa
+                    </th>
+                    {CARGO_COLUMNS.map(({ key, label }) => (
+                      <th
+                        key={key}
+                        className="px-1.5 py-2 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider align-middle"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                    <th className="px-1.5 py-2 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider align-middle">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {EMPRESAS_OR.map((emp, idx) => (
+                    <tr
+                      key={emp}
+                      className={idx % 2 === 0 ? 'bg-gray-900/30' : 'bg-gray-900/10'}
+                    >
+                      <td className="px-2 py-2 text-sm text-gray-300 font-medium sticky left-0 bg-inherit z-10 align-middle truncate" title={emp}>
+                        {emp}
+                      </td>
+                      {CARGO_COLUMNS.map(({ key }) => {
+                        const { count, sumBase } = empresaCargoMatrix.grid[emp][key];
+                        return (
+                          <td
+                            key={key}
+                            className="px-1.5 py-2 text-sm text-center text-gray-300 align-middle"
+                          >
+                            {count === 0 ? '' : (
+                              <span className="flex flex-col items-center">
+                                <span>{count}</span>
+                                <span className="text-xs text-gray-400">${Math.round(sumBase / 1000000)} M</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      {(() => {
+                        const { count, sumBase } = empresaCargoMatrix.rowTotals[emp];
+                        return (
+                          <td className={`px-1.5 py-2 text-sm text-center align-middle ${count === 0 ? 'text-gray-300' : 'font-bold text-white'}`}>
+                            {count === 0 ? '' : (
+                              <span className="flex flex-col items-center">
+                                <span>{count}</span>
+                                <span className="text-xs text-gray-400">${Math.round(sumBase / 1000000)} M</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })()}
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-800/80 font-bold">
+                    <td className="px-2 py-2 text-sm text-white sticky left-0 bg-gray-800/80 z-10 align-middle">
+                      Total
+                    </td>
+                    {CARGO_COLUMNS.map(({ key }) => {
+                      const { count, sumBase } = empresaCargoMatrix.colTotals[key];
+                      return (
+                        <td key={key} className="px-1.5 py-2 text-sm text-center text-white align-middle">
+                          {count === 0 ? '' : (
+                            <span className="flex flex-col items-center">
+                              <span>{count}</span>
+                              <span className="text-xs text-gray-400">${Math.round(sumBase / 1000000)} M</span>
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    {(() => {
+                      const { count, sumBase } = empresaCargoMatrix.grand;
+                      return (
+                        <td className="px-1.5 py-2 text-sm text-center text-primary align-middle">
+                          {count === 0 ? '' : (
+                            <span className="flex flex-col items-center">
+                              <span>{count}</span>
+                              <span className="text-xs text-gray-400">${Math.round(sumBase / 1000000)} M</span>
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })()}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          </div>
+
+          {/* Derecha: mismo ancho que la izquierda; alto = suma de los dos cuadros */}
+          <div
+            className="min-w-0 w-full bg-background-card border border-gray-700 rounded-lg overflow-hidden flex flex-col"
+            style={cuadroHeight ? { height: cuadroHeight } : undefined}
+          >
             {/* Filtros sobre la tabla */}
             <div className="flex flex-wrap items-center gap-3 px-3 py-2 border-b border-gray-700 flex-shrink-0 bg-gray-800/50">
               <span className="text-xs font-medium text-gray-400">Filtros:</span>
@@ -351,6 +544,22 @@ const ORsAbiertas = () => {
                   </div>
                 )}
               </div>
+              <input
+                type="search"
+                value={filterReferencia}
+                onChange={(e) => setFilterReferencia(e.target.value)}
+                placeholder="Referencia"
+                className="w-32 sm:w-36 min-w-0 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary"
+                aria-label="Buscar por referencia"
+              />
+              <input
+                type="search"
+                value={filterDesAveria}
+                onChange={(e) => setFilterDesAveria(e.target.value)}
+                placeholder="Des. avería"
+                className="w-36 sm:w-44 min-w-0 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-primary"
+                aria-label="Buscar por descripción de avería"
+              />
               <button
                 type="button"
                 onClick={handleExportCsv}
@@ -360,7 +569,7 @@ const ORsAbiertas = () => {
                 <FaFileExport className="text-xs" />
                 <span>Exportar CSV</span>
               </button>
-              {(filterTaller.length > 0 || filterTipo.length > 0) && (
+              {(filterTaller.length > 0 || filterTipo.length > 0 || filterReferencia.trim() || filterDesAveria.trim()) && (
                 <button
                   type="button"
                   onClick={handleClearFilters}
@@ -423,10 +632,10 @@ const ORsAbiertas = () => {
                       <td className="px-2 py-1.5 text-sm text-gray-300 whitespace-nowrap">{order.referencia}</td>
                       <td className="px-2 py-1.5 text-sm text-gray-300 whitespace-nowrap">{order.tipo || '-'}</td>
                       <td className="px-2 py-1.5 text-sm text-gray-300 max-w-[180px] truncate" title={order.desAveria}>{order.desAveria || '-'}</td>
-                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{typeof order.manoObra === 'number' ? order.manoObra.toLocaleString('es-AR') : order.manoObra}</td>
-                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{typeof order.totalMaterial === 'number' ? order.totalMaterial.toLocaleString('es-AR') : order.totalMaterial}</td>
-                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{typeof order.subarrenda === 'number' ? order.subarrenda.toLocaleString('es-AR') : order.subarrenda}</td>
-                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{typeof order.base === 'number' ? order.base.toLocaleString('es-AR') : order.base}</td>
+                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{formatImporteSinDecimales(order.manoObra)}</td>
+                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{formatImporteSinDecimales(order.totalMaterial)}</td>
+                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{formatImporteSinDecimales(order.subarrenda)}</td>
+                      <td className="px-2 py-1.5 text-sm text-gray-300 text-right">{formatImporteSinDecimales(order.base)}</td>
                     </tr>
                   ))}
                 </tbody>

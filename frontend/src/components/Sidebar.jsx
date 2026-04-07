@@ -90,6 +90,11 @@ const Sidebar = () => {
           <span>Objetivos</span>
         </NavLink>
 
+        <NavLink to="/lista-precios" className={navLinkClass}>
+          <FaTags />
+          <span>Lista de precios</span>
+        </NavLink>
+
         <NavLink to="/" className={navLinkClass}>
           <FaHome />
           <span>Dashboard</span>

@@ -14,8 +14,13 @@ npm run dev
 ```
 
 ### 2. Acceder a la Aplicación
-- **Frontend:** http://localhost:3000
-- **Backend:** http://localhost:5000
+
+| Entorno    | Frontend | Backend (API) |
+|------------|----------|---------------|
+| **Desarrollo** | **3000** (`http://localhost:3000`) | **5000** (`http://localhost:5000`) |
+| **Producción** | **3001** | **5001** |
+
+En el navegador, el cliente HTTP usa la ruta **`/api`** (mismo host que la web: Vite en 3000/3001 proxifica al backend 5000/5001). Así, si entrás por **`http://IP:3001`**, no hace falta abrir el **5001** en el firewall de cada cliente. Arranque recomendado: **`npm run start:prod`** o **`.\start_prod.ps1`**. Despliegues con front y API en orígenes distintos: definí **`VITE_API_BASE_URL`** al compilar (ver `.env.example`).
 
 ## ⚙️ Configuración
 
@@ -66,6 +71,8 @@ oc-servicios/
 ```
 
 ## 🔧 Desarrollo
+
+**Puertos:** desarrollo **3000 / 5000**; producción **3001 / 5001** (ver tabla arriba).
 
 ```bash
 # Instalar dependencias

@@ -8,13 +8,14 @@
     "dev:backend": "cd backend && npm run dev > ../logs/backend-dev.log 2>&1",
     "dev:frontend": "cd frontend && npm run dev > ../logs/frontend-dev.out.log 2>../logs/frontend-dev.err.log",
     "start:backend": "cd backend && npm start",
+    "start:backend:prod": "cross-env NODE_ENV=production PORT=5001 node backend/server.js",
     "start:frontend": "cd frontend && npm run dev",
     "build:frontend": "cd frontend && npm run build",
     "preview:frontend": "cd frontend && npm run preview",
-    "start:prod": "concurrently -n backend,frontend -c blue,green \"npm run start:backend\" \"npm run preview:frontend\"",
-    "dev:prod-like": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run preview:frontend\"",
+    "start:prod": "concurrently -n backend,frontend -c blue,green \"npm run start:backend:prod\" \"wait-on -l -t 120s tcp:127.0.0.1:5001 && npm run preview:frontend\"",
+    "dev:prod-like": "concurrently -n backend,frontend -c blue,green \"cross-env PORT=5001 npm run dev:backend\" \"wait-on -l -t 120s tcp:127.0.0.1:5001 && npm run preview:frontend\"",
     "dev:hot": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "start:prod:single": "npm run start:backend"
+    "start:prod:single": "npm run start:backend:prod"
   },
   "keywords": [
     "servicios",
@@ -27,6 +28,8 @@
   "license": "ISC",
   "devDependencies": {
     "concurrently": "^8.2.2",
+    "cross-env": "^10.1.0",
+    "wait-on": "^8.0.1",
     "is-fullwidth-code-point": "^4.0.0",
     "playwright": "^1.58.2"
   }

@@ -5,7 +5,7 @@ import Filters from '../components/Filters';
 import Table from '../components/Table';
 import Pagination from '../components/Pagination';
 import { safeFormatDate, safeFormatTime } from '../utils/dateUtils';
-import { FaSearch } from 'react-icons/fa';
+import { FaSearch, FaPhone } from 'react-icons/fa';
 import { useFieldMappings } from '../hooks/useFieldMappings';
 
 const Citas = () => {
@@ -25,7 +25,8 @@ const Citas = () => {
     asesor: '',
     usuario: '',
     fechaDesde: '',
-    fechaHasta: ''
+    fechaHasta: '',
+    telefono: ''
   });
 
   useEffect(() => {
@@ -67,7 +68,8 @@ const Citas = () => {
       asesor: '',
       usuario: '',
       fechaDesde: '',
-      fechaHasta: ''
+      fechaHasta: '',
+      telefono: ''
     });
     setPagination(prev => ({ ...prev, page: 1 }));
   };
@@ -210,16 +212,19 @@ const Citas = () => {
           />
         </Filters.Item>
 
-        <Filters.Item label="Por página">
-          <select
-            value={pagination.limit}
-            onChange={(e) => setPagination(prev => ({ ...prev, limit: Number(e.target.value), page: 1 }))}
-            className="w-full"
-          >
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
+        <Filters.Item label="Teléfono">
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="549… o parte del número"
+              value={filters.telefono}
+              onChange={(e) => handleFilterChange('telefono', e.target.value)}
+              className="w-full pl-10 font-mono"
+            />
+            <FaPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
+          </div>
         </Filters.Item>
       </Filters>
 

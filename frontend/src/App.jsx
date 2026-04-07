@@ -18,6 +18,7 @@ import BotAnalyzer from './pages/BotAnalyzer';
 import BotConversation from './pages/BotConversation';
 import Ventas from './pages/Ventas';
 import Objetivos from './pages/Objetivos';
+import ListaPrecios from './pages/ListaPrecios';
 import ORsAbiertas from './pages/ORsAbiertas';
 import Reservas from './pages/Reservas';
 import Traspasos from './pages/Traspasos';
@@ -33,6 +34,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="ventas" element={<Ventas />} />
             <Route path="objetivos" element={<Objetivos />} />
+            <Route path="lista-precios" element={<ListaPrecios />} />
             <Route path="citas" element={<Citas />} />
             <Route path="ingresos" element={<Ingresos key="ingresos" />} />
             <Route path="mkt/db" element={<Ingresos key="mkt-db" onlyEstadC />} />

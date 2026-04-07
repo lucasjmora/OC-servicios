@@ -34,12 +34,41 @@ import { startBoletosScheduler } from './services/boletosSchedulerService.js';
 import Configuracion from './models/Configuracion.js';
 import configStorageService from './services/configStorageService.js';
 
-// Cargar variables de entorno: raíz del repo (oc-servicios/.env) y opcional backend/.env
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+// Si el proceso ya trae PORT/HOST (cross-env, systemd, start_prod.ps1), no dejar que
+// backend/.env con override: true los pise — si no, wait-on y el proxy apuntan a otro puerto.
+const runtimePort = process.env.PORT;
+const runtimeHost = process.env.HOST;
+
+// Entorno en raíz: producción → `.env`; desarrollo → `.env_dev` si existe, si no `.env`.
+// Jest (NODE_ENV=test) sigue usando `.env` para no mezclar con el perfil local.
+const repoRoot = path.join(__dirname, '..');
+const isProduction = process.env.NODE_ENV === 'production';
+const useDevFile =
+  !isProduction &&
+  process.env.NODE_ENV !== 'test' &&
+  fs.existsSync(path.join(repoRoot, '.env_dev'));
+const rootEnvPath = useDevFile
+  ? path.join(repoRoot, '.env_dev')
+  : path.join(repoRoot, '.env');
+
+dotenv.config({ path: rootEnvPath });
+if (useDevFile) {
+  console.log('ℹ️  Variables de entorno: usando .env_dev (desarrollo)');
+}
 dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+// Puertos: desarrollo 5000 (Vite en 3000); producción 5001 (frontend en 3001).
+const PORT =
+  (runtimePort !== undefined && runtimePort !== ''
+    ? runtimePort
+    : process.env.PORT) ||
+  (process.env.NODE_ENV === 'production' ? 5001 : 5000);
+
+const HOST =
+  (runtimeHost !== undefined && runtimeHost !== ''
+    ? runtimeHost
+    : process.env.HOST) || '0.0.0.0';
 
 // Middleware: CORS abierto para acceso desde cualquier origen (red local / producción)
 app.use(cors({ origin: true, credentials: true }));
@@ -229,7 +258,6 @@ async function startServer() {
       if (localIP !== 'localhost') break;
     }
 
-    const HOST = process.env.HOST || '0.0.0.0'; // 0.0.0.0 = escuchar en todas las interfaces (acceso por red)
     app.listen(PORT, HOST, () => {
       console.log('');
       console.log('═══════════════════════════════════════════');

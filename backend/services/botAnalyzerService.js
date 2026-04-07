@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import botMessageSchema from '../models/BotMessage.js';
 import Configuracion from '../models/Configuracion.js';
 import MartinaInteracciones from '../models/MartinaInteracciones.js';
+import BotConversacionGestion from '../models/BotConversacionGestion.js';
+import { mergeCitadoEnConversaciones } from './botAnalyzerCitadoCitas.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +17,180 @@ const EMPRESA_COLLECTIONS = {
   'GV': 'asistente_granville_3_1_v2_martina_flows',
   'PW': 'asistente_pampawagen_3_1_v2_martina_flows'
 };
+
+/** Query `localidad` = este valor → solo conversaciones sin localidad (sync con FILTRO_BOT_ANALYZER_SIN_LOCALIDAD en frontend). */
+const FILTRO_LOCALIDAD_SIN = '__sin_localidad__';
+
+function esLocalidadVaciaParaFiltro(loc) {
+  return loc == null || String(loc).trim() === '';
+}
+
+/** Valor sintético en respuestas del listado (no se persiste en gestión). */
+export const ESTADO_ANALIZADOR_AGENDADO = 'agendado';
+
+/**
+ * Si hubo agendar_turno / agendar_turno_v2, el estado en API es `agendado` (UI/CSV: campo vacío); no cuenta como tratado ni como “no tratado” a gestionar.
+ */
+export function aplicarEstadoPorReglaAgendarBotAnalyzer(conversations) {
+  if (!conversations?.length) return;
+  for (const c of conversations) {
+    if (c.herramientasUtilizadas?.tieneAgendarTurno) {
+      c.estado = ESTADO_ANALIZADOR_AGENDADO;
+    }
+  }
+}
+
+/** @deprecated usar aplicarEstadoPorReglaAgendarBotAnalyzer */
+export const aplicarEstadoNoTratadoSiAgendarTurno = aplicarEstadoPorReglaAgendarBotAnalyzer;
+
+/** True si el nombre de herramienta es agendar_turno_v2 o cualquier agendar_turno… (Flowise). */
+export function esNombreHerramientaAgendarTurno(raw) {
+  if (raw == null) return false;
+  const s = String(raw).trim().toLowerCase();
+  if (!s) return false;
+  return s === 'agendar_turno_v2' || s.startsWith('agendar_turno');
+}
+
+/**
+ * Detecta ejecución de agendar en un elemento de usedTools (objeto, string o nombre en toolInput).
+ */
+export function entradaUsedToolsEsAgendarTurno(tool) {
+  if (tool == null) return false;
+  if (typeof tool === 'string') return esNombreHerramientaAgendarTurno(tool);
+  if (typeof tool === 'object') {
+    const n = tool.tool ?? tool.name ?? tool.toolName;
+    if (esNombreHerramientaAgendarTurno(n)) return true;
+    const ti = tool.toolInput;
+    if (ti && typeof ti === 'object') {
+      const nested = ti.tool ?? ti.toolName ?? ti.tool_used;
+      if (esNombreHerramientaAgendarTurno(nested)) return true;
+    }
+  }
+  return false;
+}
+
+function usedToolsArrayTieneAgendarTurno(toolsArray) {
+  if (!toolsArray || !Array.isArray(toolsArray)) return false;
+  return toolsArray.some(entradaUsedToolsEsAgendarTurno);
+}
+
+/** Normaliza req.query.estado → 'tratado' | 'no_tratado' | null (arrays Express, espacios, mayúsculas). */
+export function parseBotAnalyzerEstadoQuery(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(Array.isArray(raw) ? raw[0] : raw).trim().toLowerCase();
+  if (s === 'tratado') return 'tratado';
+  if (s === 'no_tratado') return 'no_tratado';
+  return null;
+}
+
+/** Clave canónica para cruzar sessionId del bot con BotConversacionGestion (sufijos tipo @c.us). */
+export function canonicalSessionIdForGestion(sessionId) {
+  if (sessionId == null || sessionId === '') return '';
+  const s = String(sessionId).trim();
+  const i = s.indexOf('@');
+  return i > 0 ? s.slice(0, i) : s;
+}
+
+/** Variantes a buscar en Mongo para encontrar el documento de gestión aunque el ID lleve o no JID. */
+export function collectSessionIdVariantsForGestion(sessionIds) {
+  const variantSet = new Set();
+  const arr = Array.isArray(sessionIds) ? sessionIds : [];
+  for (const sid of arr) {
+    const k = canonicalSessionIdForGestion(sid);
+    if (!k) continue;
+    variantSet.add(k);
+    variantSet.add(`${k}@c.us`);
+    variantSet.add(`${k}@s.whatsapp.net`);
+  }
+  return [...variantSet];
+}
+
+const GESTION_SESSION_IN_CHUNK = 8000;
+
+async function mergeEstadosGestionBotAnalyzer(conversations, empresaUpper) {
+  const baseIds = conversations.map((c) => c.sessionId);
+  const queryIds = collectSessionIdVariantsForGestion(baseIds);
+  if (queryIds.length === 0) {
+    for (const c of conversations) {
+      if (c.estado == null) c.estado = 'no_tratado';
+    }
+    return;
+  }
+  const map = {};
+  for (let i = 0; i < queryIds.length; i += GESTION_SESSION_IN_CHUNK) {
+    const chunk = queryIds.slice(i, i + GESTION_SESSION_IN_CHUNK);
+    const rows = await BotConversacionGestion.find({
+      sessionId: { $in: chunk },
+      empresa: empresaUpper
+    }).lean();
+    rows.forEach((r) => {
+      map[canonicalSessionIdForGestion(r.sessionId)] = r.estado;
+    });
+  }
+  for (const c of conversations) {
+    c.estado = map[canonicalSessionIdForGestion(c.sessionId)] || 'no_tratado';
+  }
+}
+
+/** Variantes de sessionId presentes en Flowise para todas las sesiones marcadas tratado en gestión. */
+async function fetchTratadoSessionIdVariants(empresaUpper) {
+  if (!empresaUpper) return [];
+  const rows = await BotConversacionGestion.find(
+    { empresa: empresaUpper, estado: 'tratado' },
+    { sessionId: 1, _id: 0 }
+  ).lean();
+  const ids = rows.map((r) => r.sessionId).filter(Boolean);
+  return collectSessionIdVariantsForGestion(ids);
+}
+
+/**
+ * Combina matchStage.sessionId con $in / $nin (filtro estado en Mongo).
+ * Soporta $in previo (keyword), $regex (búsqueda por sessionId) y ausencia de filtro.
+ */
+function mergeSessionIdConstraint(matchStage, constraint) {
+  const existing = matchStage.sessionId;
+  if (existing == null) {
+    matchStage.sessionId = constraint;
+    return;
+  }
+  if (existing.$in && constraint.$in) {
+    const allow = new Set(constraint.$in);
+    matchStage.sessionId = { $in: existing.$in.filter((id) => allow.has(id)) };
+    return;
+  }
+  if (existing.$in && constraint.$nin) {
+    const deny = new Set(constraint.$nin);
+    matchStage.sessionId = { $in: existing.$in.filter((id) => !deny.has(id)) };
+    return;
+  }
+  if (existing.$in && constraint.$regex != null) {
+    const andArr = [...(matchStage.$and || [])];
+    andArr.push({ sessionId: { $in: existing.$in } });
+    andArr.push({
+      sessionId: { $regex: constraint.$regex, $options: constraint.$options || 'i' }
+    });
+    matchStage.$and = andArr;
+    delete matchStage.sessionId;
+    return;
+  }
+  if (existing.$regex != null && (constraint.$in || constraint.$nin)) {
+    const andArr = [...(matchStage.$and || [])];
+    andArr.push({
+      sessionId: { $regex: existing.$regex, $options: existing.$options || 'i' }
+    });
+    andArr.push({ sessionId: constraint });
+    matchStage.$and = andArr;
+    delete matchStage.sessionId;
+    return;
+  }
+  matchStage.$and = [...(matchStage.$and || []), { sessionId: existing }, { sessionId: constraint }];
+  delete matchStage.sessionId;
+}
+
+function isEmptySessionIdInMatch(matchStage) {
+  const s = matchStage.sessionId;
+  return Boolean(s && s.$in && Array.isArray(s.$in) && s.$in.length === 0);
+}
 
 // Conexión separada para flowiseProd
 let botAnalyzerConnection = null;
@@ -76,6 +252,160 @@ function getBotMessageModel(empresa) {
 
   // Crear el modelo dinámicamente
   return botAnalyzerConnection.model(collectionName, botMessageSchema, collectionName);
+}
+
+/** Dígitos del sessionId desde el 4.º carácter (índice 3). */
+function normalizeSessionDigitTail(sessionId) {
+  if (sessionId == null) return '';
+  return String(sessionId).slice(3).replace(/\D/g, '');
+}
+
+/**
+ * Resuelve localidad por prefijo de dígitos (regla más larga primero).
+ * @param {object} mappingBlob - { FC: [{ secuencia, localidad }], ... }
+ */
+function resolveLocalidadFromSessionMapping(sessionId, empresa, mappingBlob) {
+  if (!mappingBlob || typeof mappingBlob !== 'object') return null;
+  const emp = (empresa || '').toUpperCase();
+  const rows = mappingBlob[emp];
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const tail = normalizeSessionDigitTail(sessionId);
+  if (!tail) return null;
+  const sorted = rows
+    .filter((r) => r && typeof r === 'object')
+    .map((r) => ({
+      secuencia: String(r.secuencia ?? '').replace(/\D/g, ''),
+      localidad: String(r.localidad ?? '').trim()
+    }))
+    .filter((r) => r.secuencia && r.localidad)
+    .sort((a, b) => b.secuencia.length - a.secuencia.length);
+  for (const r of sorted) {
+    if (tail.startsWith(r.secuencia)) return r.localidad;
+  }
+  return null;
+}
+
+const LOCALIDAD_MAP_CACHE_MS = 45_000;
+let localidadMapCache = { t: 0, data: null };
+
+async function fetchBotAnalyzerLocalidadMapping() {
+  const now = Date.now();
+  if (localidadMapCache.data && now - localidadMapCache.t < LOCALIDAD_MAP_CACHE_MS) {
+    return localidadMapCache.data;
+  }
+  const empty = () => {
+    const o = { FC: [], GV: [], PW: [] };
+    localidadMapCache = { t: now, data: o };
+    return o;
+  };
+  try {
+    const doc = await Configuracion.findOne({ singleton: true }).lean();
+    const raw = doc?.mappings?.botAnalyzerLocalidadSesion;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return empty();
+    }
+    const out = {
+      FC: Array.isArray(raw.FC) ? raw.FC : [],
+      GV: Array.isArray(raw.GV) ? raw.GV : [],
+      PW: Array.isArray(raw.PW) ? raw.PW : []
+    };
+    localidadMapCache = { t: now, data: out };
+    return out;
+  } catch {
+    if (localidadMapCache.data) return localidadMapCache.data;
+    return { FC: [], GV: [], PW: [] };
+  }
+}
+
+/** Ciudad/nombre leído del chat → código Granville (tabla estándar). */
+const GRANVILLE_CHAT_NOMBRE_A_CODIGO = new Map(
+  [
+    ['Trelew', 'TW'],
+    ['Junín', 'JU'],
+    ['San Nicolás', 'SN'],
+    ['Comodoro Rivadavia', 'CO'],
+    ['Pergamino', 'PE'],
+    ['Puerto Madryn', 'PM']
+  ].map(([nombre, codigo]) => [nombre.toLowerCase(), codigo])
+);
+
+const GRANVILLE_CODIGOS_VALIDOS = new Set(['TW', 'JU', 'SN', 'CO', 'PE', 'PM']);
+
+/**
+ * Para GV: convierte el texto devuelto por el extractor de chat al código de localidad.
+ * Si ya es un código válido o no hay match, devuelve el valor (recortado) tal cual.
+ */
+function mapGranvilleLocalidadFromChat(valor, empresa) {
+  if ((empresa || '').toUpperCase() !== 'GV' || valor == null) return valor;
+  const t = String(valor).trim();
+  if (!t) return valor;
+  const porNombre = GRANVILLE_CHAT_NOMBRE_A_CODIGO.get(t.toLowerCase());
+  if (porNombre) return porNombre;
+  const upper = t.toUpperCase();
+  if (GRANVILLE_CODIGOS_VALIDOS.has(upper)) return upper;
+  return t;
+}
+
+/** Nombre leído del chat → código Fortecar (tabla estándar). */
+const FORTECAR_CHAT_NOMBRE_A_CODIGO = new Map(
+  [
+    ['Junín', 'JU'],
+    ['San Nicolás', 'SN'],
+    ['Chivilcoy', 'CH'],
+    ['9 de Julio', '9J'],
+    ['Coronel Suárez', 'CS'],
+    ['Olavarría', 'OL'],
+    ['Trenque Lauquen', 'TL'],
+    ['Pergamino', 'PE']
+  ].map(([nombre, codigo]) => [nombre.toLowerCase(), codigo])
+);
+
+const FORTECAR_CODIGOS_VALIDOS = new Set(['JU', 'SN', 'CH', '9J', 'CS', 'OL', 'TL', 'PE']);
+
+/**
+ * Para FC: convierte el texto devuelto por el extractor de chat al código de localidad.
+ */
+function mapFortecarLocalidadFromChat(valor, empresa) {
+  if ((empresa || '').toUpperCase() !== 'FC' || valor == null) return valor;
+  const t = String(valor).trim();
+  if (!t) return valor;
+  const porNombre = FORTECAR_CHAT_NOMBRE_A_CODIGO.get(t.toLowerCase());
+  if (porNombre) return porNombre;
+  const upper = t.toUpperCase();
+  if (FORTECAR_CODIGOS_VALIDOS.has(upper)) return upper;
+  return t;
+}
+
+/** Nombre leído del chat → código Pampa-viajes (Pampawagen). */
+const PAMPAWAGEN_CHAT_NOMBRE_A_CODIGO = new Map(
+  [
+    ['General Pico', 'GP'],
+    ['Santa Rosa', 'SR']
+  ].map(([nombre, codigo]) => [nombre.toLowerCase(), codigo])
+);
+
+const PAMPAWAGEN_CODIGOS_VALIDOS = new Set(['GP', 'SR']);
+
+/**
+ * Para PW: convierte el texto devuelto por el extractor de chat al código de localidad.
+ */
+function mapPampawagenLocalidadFromChat(valor, empresa) {
+  if ((empresa || '').toUpperCase() !== 'PW' || valor == null) return valor;
+  const t = String(valor).trim();
+  if (!t) return valor;
+  const porNombre = PAMPAWAGEN_CHAT_NOMBRE_A_CODIGO.get(t.toLowerCase());
+  if (porNombre) return porNombre;
+  const upper = t.toUpperCase();
+  if (PAMPAWAGEN_CODIGOS_VALIDOS.has(upper)) return upper;
+  return t;
+}
+
+/** Aplica mapeo nombre/código del chat según empresa (FC, GV, PW). */
+function mapLocalidadDesdeChatPorEmpresa(valor, empresa) {
+  return mapPampawagenLocalidadFromChat(
+    mapFortecarLocalidadFromChat(mapGranvilleLocalidadFromChat(valor, empresa), empresa),
+    empresa
+  );
 }
 
 /**
@@ -693,6 +1023,13 @@ export async function getConversations(empresa, filters = {}) {
   try {
     await connectToFlowiseProd();
     const BotMessage = getBotMessageModel(empresa);
+    const localidadSesionMapping = await fetchBotAnalyzerLocalidadMapping();
+
+    const empresaUpper = (empresa || '').toUpperCase();
+    const estadoFiltroParsed = parseBotAnalyzerEstadoQuery(filters.estado);
+    const tieneFiltroEstado =
+      estadoFiltroParsed === 'tratado' || estadoFiltroParsed === 'no_tratado';
+    let estadoMongoPrefilter = false;
 
     // Construir filtro de match inicial
     const matchStage = {};
@@ -754,6 +1091,11 @@ export async function getConversations(empresa, filters = {}) {
       }
     }
 
+    let tratadoVariantsMemo = null;
+    if (tieneFiltroEstado && empresaUpper) {
+      tratadoVariantsMemo = await fetchTratadoSessionIdVariants(empresaUpper);
+    }
+
     // Nota: fechaDesde/fechaHasta se aplican después del $group, filtrando por lastMessageDate
 
     // Pipeline de agregación optimizado
@@ -764,12 +1106,44 @@ export async function getConversations(empresa, filters = {}) {
     
     let sessionIdsConKeyword = null;
     if (keywordFilter) {
+      if (
+        tieneFiltroEstado &&
+        estadoFiltroParsed === 'tratado' &&
+        (!tratadoVariantsMemo || tratadoVariantsMemo.length === 0)
+      ) {
+        return {
+          conversations: [],
+          total: 0,
+          page: filters.page || 1,
+          limit: filters.limit || 50,
+          totalPages: 0
+        };
+      }
+
       console.log(`[BOT ANALYZER] Buscando sessionIds que contienen keyword: "${keywordFilter.keyword}"`);
-      
+
       // Paso 1: Encontrar sessionIds que tienen al menos un mensaje con la keyword
       const keywordMatchStage = {};
+      if (tratadoVariantsMemo?.length && estadoFiltroParsed === 'tratado') {
+        keywordMatchStage.sessionId = { $in: tratadoVariantsMemo };
+      } else if (tratadoVariantsMemo?.length && estadoFiltroParsed === 'no_tratado') {
+        keywordMatchStage.sessionId = { $nin: tratadoVariantsMemo };
+      }
       if (filters.sessionId) {
-        keywordMatchStage.sessionId = { $regex: filters.sessionId, $options: 'i' };
+        mergeSessionIdConstraint(keywordMatchStage, {
+          $regex: filters.sessionId,
+          $options: 'i'
+        });
+      }
+
+      if (isEmptySessionIdInMatch(keywordMatchStage)) {
+        return {
+          conversations: [],
+          total: 0,
+          page: filters.page || 1,
+          limit: filters.limit || 50,
+          totalPages: 0
+        };
       }
       
       // Aplicar el mismo filtro de keyword que antes
@@ -826,7 +1200,40 @@ export async function getConversations(empresa, filters = {}) {
       // se aplicará después de agrupar
       delete matchStage.createdDate;
     }
-    
+
+    // Filtro estado en Mongo: evita agregar y fusionar gestión sobre todas las sesiones.
+    if (tieneFiltroEstado && empresaUpper) {
+      const tratadoVariants = tratadoVariantsMemo;
+      if (estadoFiltroParsed === 'tratado') {
+        if (!tratadoVariants || tratadoVariants.length === 0) {
+          return {
+            conversations: [],
+            total: 0,
+            page: filters.page || 1,
+            limit: filters.limit || 50,
+            totalPages: 0
+          };
+        }
+        mergeSessionIdConstraint(matchStage, { $in: tratadoVariants });
+        estadoMongoPrefilter = true;
+      } else {
+        if (tratadoVariants.length > 0) {
+          mergeSessionIdConstraint(matchStage, { $nin: tratadoVariants });
+        }
+        estadoMongoPrefilter = true;
+      }
+    }
+
+    if (isEmptySessionIdInMatch(matchStage)) {
+      return {
+        conversations: [],
+        total: 0,
+        page: filters.page || 1,
+        limit: filters.limit || 50,
+        totalPages: 0
+      };
+    }
+
     // Paso 1: Agrupar conversaciones y detectar herramientas en una sola pasada
     const basePipeline = [
       // Filtro inicial si existe (ahora solo por sessionId y fechas, no por keyword)
@@ -931,25 +1338,30 @@ export async function getConversations(empresa, filters = {}) {
     let allConversations = [];
     let total = 0;
 
-    const empresaUpper = empresa ? empresa.toUpperCase() : null;
-    const tieneFiltro7Dias = empresaUpper && ['FC', 'GV', 'PW'].includes(empresaUpper);
     const tieneFiltroHerramientas = filtroHerramientas === 'sin' || filtroHerramientas === 'con' || filtroHerramientas === 'con_agendar';
     const tieneFiltroKeyword = filters.keyword && filters.keyword.trim();
+    const tieneFiltroLocalidad = Boolean(filters.localidad && String(filters.localidad).trim());
+    const tieneFiltroCitado =
+      filters.citado === 'si' || filters.citado === 'no';
+    const estadoEvitaCargaCompleta = tieneFiltroEstado && estadoMongoPrefilter;
+    /** Solo entonces hay que traer todas las sesiones, filtrar en memoria y paginar después. */
+    const necesitaCargaCompletaEnMemoria =
+      tieneFiltroHerramientas ||
+      tieneFiltroKeyword ||
+      tieneFiltroLocalidad ||
+      (tieneFiltroEstado && !estadoEvitaCargaCompleta) ||
+      tieneFiltroCitado;
 
-    if (tieneFiltro7Dias || tieneFiltroHerramientas || tieneFiltroKeyword) {
-      // Procesar TODAS las conversaciones cuando:
-      // 1. Es FC, GV o PW (mostrar todas sin límite de fecha)
-      // 2. Hay filtro de herramientas (necesitamos procesar todas para filtrar correctamente)
-      // 3. Hay filtro de palabra clave (necesitamos procesar todas para buscar en contenido de mensajes)
-      console.log(`[${empresaUpper}] Ejecutando pipeline de agregación...`);
+    if (necesitaCargaCompletaEnMemoria) {
+      // Procesar todas las conversaciones que cumplan el $match cuando hace falta filtrar
+      // por herramientas, localidad o verificar keyword en todos los mensajes de la sesión.
+      console.log(`[${empresaUpper}] Ejecutando pipeline de agregación (carga completa en memoria)...`);
       if (tieneFiltroKeyword) {
         console.log(`[${empresaUpper}] Pipeline incluye filtro de keyword en MongoDB`);
       }
-      allConversations = await BotMessage.aggregate(pipeline);
+      allConversations = await BotMessage.aggregate(pipeline).allowDiskUse(true);
       total = allConversations.length;
-      if (tieneFiltro7Dias) {
-        console.log(`[${empresaUpper}] Conversaciones obtenidas: ${total}`);
-      }
+      console.log(`[${empresaUpper}] Conversaciones obtenidas: ${total}`);
       
       // Si hay keyword, verificar si alguna conversación tiene el sessionId conocido
       if (tieneFiltroKeyword && allConversations.length > 0) {
@@ -968,7 +1380,7 @@ export async function getConversations(empresa, filters = {}) {
     } else {
       // Si no hay filtro, obtener el total primero (más eficiente)
       const countPipeline = [...pipeline, { $count: 'total' }];
-      const [totalResult] = await BotMessage.aggregate(countPipeline);
+      const [totalResult] = await BotMessage.aggregate(countPipeline).allowDiskUse(true);
       total = totalResult?.total || 0;
 
       // Aplicar paginación antes de procesar
@@ -977,7 +1389,7 @@ export async function getConversations(empresa, filters = {}) {
         { $skip: skip },
         { $limit: limit }
       );
-      allConversations = await BotMessage.aggregate(pipeline);
+      allConversations = await BotMessage.aggregate(pipeline).allowDiskUse(true);
     }
 
     // Procesar herramientas y localidad en memoria para todas las conversaciones obtenidas
@@ -990,7 +1402,23 @@ export async function getConversations(empresa, filters = {}) {
       const lastMessageDate = conv.lastMessageDate;
       const diaUltimoMensaje = normalizarFechaADia(lastMessageDate);
 
-      // Filtrar herramientas del mismo día que el último mensaje
+      // agendar_turno_v2 u otra variante en CUALQUIER día → no tratado, icono, citado, filtros
+      if (conv.allTools && Array.isArray(conv.allTools)) {
+        for (const toolsItem of conv.allTools) {
+          let arr = null;
+          if (toolsItem && typeof toolsItem === 'object' && toolsItem.tools) {
+            arr = toolsItem.tools;
+          } else if (toolsItem && Array.isArray(toolsItem)) {
+            arr = toolsItem;
+          }
+          if (usedToolsArrayTieneAgendarTurno(arr)) {
+            tieneAgendarTurno = true;
+            break;
+          }
+        }
+      }
+
+      // Filtrar herramientas del mismo día que el último mensaje (correo, venta vía agendar ese día)
       let herramientasDelDia = [];
       if (conv.allTools && Array.isArray(conv.allTools)) {
         for (const toolsItem of conv.allTools) {
@@ -1011,32 +1439,30 @@ export async function getConversations(empresa, filters = {}) {
         }
       }
 
-      // Procesar solo las herramientas del día del último mensaje
       for (const toolsArray of herramientasDelDia) {
         if (toolsArray && Array.isArray(toolsArray)) {
           for (const tool of toolsArray) {
-            if (tool && typeof tool === 'object' && tool.tool) {
-              // Detectar cualquier versión de agendar_turno (agendar_turno, agendar_turno_v2, etc.)
-              if (tool.tool && tool.tool.startsWith('agendar_turno')) {
-                tieneAgendarTurno = true;
-                // Solo en agendar: detectar si hubo venta (extraLabel con valor distinto de "Ninguno")
-                const extraLabel = tool?.toolInput?.extraLabel;
-                if (extraLabel && typeof extraLabel === 'string' && extraLabel.trim() && extraLabel.trim().toLowerCase() !== 'ninguno') {
-                  tieneVenta = true;
-                }
-              } else if (tool.tool === 'enviarCorreo') {
-                tieneEnviarCorreo = true;
+            if (entradaUsedToolsEsAgendarTurno(tool)) {
+              const extraLabel = tool?.toolInput?.extraLabel;
+              if (extraLabel && typeof extraLabel === 'string' && extraLabel.trim() && extraLabel.trim().toLowerCase() !== 'ninguno') {
+                tieneVenta = true;
               }
-              // Si ambas están encontradas, salir del loop
-              if (tieneAgendarTurno && tieneEnviarCorreo) break;
+            } else if (tool && typeof tool === 'object' && tool.tool === 'enviarCorreo') {
+              tieneEnviarCorreo = true;
             }
+            if (tieneAgendarTurno && tieneEnviarCorreo) break;
           }
         }
         if (tieneAgendarTurno && tieneEnviarCorreo) break;
       }
 
-      // Extraer localidad de la conversación (pasar empresa para lógica específica)
-      const localidad = extractLocalidad(conv, empresa);
+      const localidad =
+        mapLocalidadDesdeChatPorEmpresa(extractLocalidad(conv, empresa), empresa) ??
+        resolveLocalidadFromSessionMapping(
+          conv.sessionId,
+          empresa,
+          localidadSesionMapping
+        );
 
       return {
         sessionId: conv.sessionId,
@@ -1082,9 +1508,14 @@ export async function getConversations(empresa, filters = {}) {
 
     // Aplicar filtro de localidad si se especifica
     if (filters.localidad) {
-      conversations = conversations.filter(conv => 
-        conv.localidad && conv.localidad === filters.localidad
-      );
+      const locParam = String(filters.localidad).trim();
+      if (locParam === FILTRO_LOCALIDAD_SIN) {
+        conversations = conversations.filter((conv) => esLocalidadVaciaParaFiltro(conv.localidad));
+      } else {
+        conversations = conversations.filter(
+          (conv) => conv.localidad && conv.localidad === locParam
+        );
+      }
     }
 
     // Aplicar filtro de palabra clave en memoria como respaldo (ya se filtró en MongoDB, pero esto asegura que no se pierda nada)
@@ -1194,44 +1625,70 @@ export async function getConversations(empresa, filters = {}) {
       console.log(`[BOT ANALYZER] Conversaciones con keyword: ${yaTienenKeyword}, sin keyword: ${noTienenKeyword}`);
       console.log(`[BOT ANALYZER] Conversaciones finales después de verificación: ${conversations.length}`);
     }
-    
-    // Calcular total después de aplicar todos los filtros
-    total = conversations.length;
-    
-    if (tieneFiltro7Dias) {
+
+    if (tieneFiltroEstado) {
+      if (estadoMongoPrefilter) {
+        for (const c of conversations) {
+          c.estado = estadoFiltroParsed;
+        }
+      } else {
+        await mergeEstadosGestionBotAnalyzer(conversations, empresaUpper);
+      }
+      aplicarEstadoPorReglaAgendarBotAnalyzer(conversations);
+      const esperado = estadoFiltroParsed;
+      conversations = conversations.filter((conv) => {
+        const e = conv.estado || 'no_tratado';
+        return e === esperado;
+      });
+    }
+
+    if (tieneFiltroCitado) {
+      conversations = await mergeCitadoEnConversaciones(conversations);
+      const wantSi = filters.citado === 'si';
+      conversations = conversations.filter((c) => (wantSi ? c.citado : !c.citado));
+    }
+
+    // Total: con carga completa en memoria, conversaciones ya están filtradas al completo.
+    // Con paginación en Mongo ($skip/$limit), conversations es solo la página actual:
+    // no usar conversations.length o el total queda ~50 y totalPages=1 (sin UI de páginas).
+    if (necesitaCargaCompletaEnMemoria) {
+      total = conversations.length;
       const filtrosAplicados = [];
       if (filtroHerramientas) filtrosAplicados.push(`herramientas=${filtroHerramientas}`);
       if (filters.localidad) filtrosAplicados.push(`localidad=${filters.localidad}`);
       if (filters.keyword) filtrosAplicados.push(`keyword=${filters.keyword}`);
-      console.log(`[${empresaUpper}] Total después de filtros (${filtrosAplicados.join(', ')}): ${total}, Página: ${page}, Límite: ${limit}`);
+      if (tieneFiltroEstado) filtrosAplicados.push(`estado=${estadoFiltroParsed}`);
+      if (tieneFiltroCitado) filtrosAplicados.push(`citado=${filters.citado}`);
+      console.log(
+        `[${empresaUpper}] Total después de filtros (${filtrosAplicados.join(', ') || 'ninguno'}): ${total}, Página: ${page}, Límite: ${limit}`
+      );
     }
-    
-    // Aplicar paginación después de los filtros
-    // Para FC, GV, PW o cuando hay filtro de herramientas, ya procesamos todas las conversaciones
-    // así que aplicamos paginación en memoria
-    if (tieneFiltro7Dias || tieneFiltroHerramientas || filters.localidad || filters.keyword) {
+
+    // Tras filtros en memoria: paginar aquí; si no hubo carga completa, ya vino paginado desde MongoDB
+    if (necesitaCargaCompletaEnMemoria) {
       const skip = (page - 1) * limit;
       conversations = conversations.slice(skip, skip + limit);
-      if (tieneFiltro7Dias) {
-        console.log(`[${empresaUpper}] Después de paginación: ${conversations.length} conversaciones (skip: ${skip}, limit: ${limit})`);
-        if (conversations.length > 0) {
-          const primeraFecha = conversations[0].lastMessageDate ? new Date(conversations[0].lastMessageDate).toLocaleDateString('es-AR') : 'N/A';
-          const ultimaFecha = conversations[conversations.length - 1].lastMessageDate ? new Date(conversations[conversations.length - 1].lastMessageDate).toLocaleDateString('es-AR') : 'N/A';
-          console.log(`[${empresaUpper}] Rango de fechas en página ${page}: ${ultimaFecha} a ${primeraFecha}`);
-        }
-      }
-    } else {
-      // Si no hay filtros especiales, la paginación ya se aplicó en la consulta MongoDB
-      // No necesitamos hacer nada más
+      console.log(
+        `[${empresaUpper}] Después de paginación en memoria: ${conversations.length} conversaciones (skip: ${skip}, limit: ${limit})`
+      );
+    }
+
+    if (!tieneFiltroCitado) {
+      conversations = await mergeCitadoEnConversaciones(conversations);
     }
 
     const totalPages = Math.ceil(total / limit);
-    if (tieneFiltro7Dias) {
+    if (necesitaCargaCompletaEnMemoria) {
       console.log(`[${empresaUpper}] Total páginas: ${totalPages} (total: ${total}, limit: ${limit})`);
     }
 
+    const conservarArraysMensajes = filters.retainMessageArraysForExport === true;
+    const conversationsOut = conservarArraysMensajes
+      ? conversations
+      : conversations.map(({ allMessages, userMessages, ...rest }) => rest);
+
     return {
-      conversations,
+      conversations: conversationsOut,
       total,
       page,
       limit,
@@ -1253,6 +1710,7 @@ export async function getConversationMessages(empresa, sessionId) {
   try {
     await connectToFlowiseProd();
     const BotMessage = getBotMessageModel(empresa);
+    const localidadSesionMapping = await fetchBotAnalyzerLocalidadMapping();
 
     const messages = await BotMessage.find({ sessionId })
       .sort({ createdDate: 1 })
@@ -1271,36 +1729,33 @@ export async function getConversationMessages(empresa, sessionId) {
     const lastMessageDate = messages[messages.length - 1].createdDate;
     const diaUltimoMensaje = normalizarFechaADia(lastMessageDate);
 
-    // Buscar herramientas en todos los mensajes
-    // Solo considerar herramientas del mismo día que el último mensaje
+    for (const msg of messages) {
+      if (msg.usedTools && Array.isArray(msg.usedTools) && usedToolsArrayTieneAgendarTurno(msg.usedTools)) {
+        tieneAgendarTurno = true;
+        break;
+      }
+    }
+
     for (const msg of messages) {
       if (msg.usedTools && Array.isArray(msg.usedTools)) {
         const diaMensaje = normalizarFechaADia(msg.createdDate);
         if (diaMensaje === diaUltimoMensaje) {
           for (const tool of msg.usedTools) {
-            if (tool && typeof tool === 'object' && tool.tool) {
-              // Detectar cualquier versión de agendar_turno
-              if (tool.tool && tool.tool.startsWith('agendar_turno')) {
-                tieneAgendarTurno = true;
-                // Solo en agendar: detectar si hubo venta (extraLabel con valor distinto de "Ninguno")
-                const extraLabel = tool?.toolInput?.extraLabel;
-                if (extraLabel && typeof extraLabel === 'string' && extraLabel.trim() && extraLabel.trim().toLowerCase() !== 'ninguno') {
-                  tieneVenta = true;
-                }
-              } else if (tool.tool === 'enviarCorreo') {
-                tieneEnviarCorreo = true;
+            if (entradaUsedToolsEsAgendarTurno(tool)) {
+              const extraLabel = tool?.toolInput?.extraLabel;
+              if (extraLabel && typeof extraLabel === 'string' && extraLabel.trim() && extraLabel.trim().toLowerCase() !== 'ninguno') {
+                tieneVenta = true;
               }
-              // Si ambas están encontradas, salir del loop
-              if (tieneAgendarTurno && tieneEnviarCorreo) break;
+            } else if (tool && typeof tool === 'object' && tool.tool === 'enviarCorreo') {
+              tieneEnviarCorreo = true;
             }
+            if (tieneAgendarTurno && tieneEnviarCorreo) break;
           }
         }
       }
       if (tieneAgendarTurno && tieneEnviarCorreo) break;
     }
 
-    // Extraer localidad de la conversación
-    // Necesitamos obtener la conversación completa para extraer la localidad
     const conversationData = await BotMessage.aggregate([
       { $match: { sessionId } },
       {
@@ -1314,10 +1769,19 @@ export async function getConversationMessages(empresa, sessionId) {
       }
     ]);
 
-    let localidad = null;
-    if (conversationData.length > 0) {
-      const conv = conversationData[0];
-      localidad = extractLocalidad(conv, empresa);
+    let localidad =
+      conversationData.length > 0
+        ? mapLocalidadDesdeChatPorEmpresa(
+            extractLocalidad(conversationData[0], empresa),
+            empresa
+          )
+        : null;
+    if (localidad == null) {
+      localidad = resolveLocalidadFromSessionMapping(
+        sessionId,
+        empresa,
+        localidadSesionMapping
+      );
     }
 
     return {

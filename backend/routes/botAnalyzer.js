@@ -3,7 +3,11 @@ import {
   getConversations,
   getConversationMessages,
   searchConversations,
-  validateEmpresa
+  validateEmpresa,
+  canonicalSessionIdForGestion,
+  collectSessionIdVariantsForGestion,
+  parseBotAnalyzerEstadoQuery,
+  aplicarEstadoPorReglaAgendarBotAnalyzer
 } from '../services/botAnalyzerService.js';
 import BotConversacionGestion from '../models/BotConversacionGestion.js';
 
@@ -61,7 +65,7 @@ function escapeCsvContent(val) {
 router.get('/:empresa/export', async (req, res) => {
   try {
     const { empresa } = req.params;
-    const { includeMessages, page, limit, sessionId, fechaDesde, fechaHasta, filtroHerramientas, localidad, keyword } = req.query;
+    const { includeMessages, page, limit, sessionId, fechaDesde, fechaHasta, filtroHerramientas, localidad, keyword, estado, citado } = req.query;
 
     if (!validateEmpresa(empresa)) {
       return res.status(400).json({
@@ -71,6 +75,8 @@ router.get('/:empresa/export', async (req, res) => {
     }
 
     const exportLimit = Math.min(parseInt(limit) || 10000, 10000);
+    const withMessages = includeMessages === '1' || includeMessages === 'true';
+    const estadoParsed = parseBotAnalyzerEstadoQuery(estado);
     const filters = {
       page: 1,
       limit: exportLimit,
@@ -79,35 +85,36 @@ router.get('/:empresa/export', async (req, res) => {
       fechaHasta: fechaHasta || null,
       filtroHerramientas: ['sin', 'con', 'con_agendar'].includes(filtroHerramientas) ? filtroHerramientas : null,
       localidad: localidad || null,
-      keyword: keyword || null
+      keyword: keyword || null,
+      estado: estadoParsed,
+      citado: citado === 'si' || citado === 'no' ? citado : null,
+      /** CSV con cuerpos de mensaje necesita allMessages en la respuesta de getConversations */
+      retainMessageArraysForExport: withMessages
     };
 
     const result = await getConversations(empresa.toUpperCase(), filters);
 
-    const conversacionesElegibles = result.conversations.filter(conv =>
-      !conv.herramientasUtilizadas?.tieneAgendarTurno
-    );
+    const estadoYaFusionadoEnServicio =
+      estadoParsed === 'tratado' || estadoParsed === 'no_tratado';
 
-    if (conversacionesElegibles.length > 0) {
-      const sessionIds = conversacionesElegibles.map(conv => conv.sessionId);
+    if (!estadoYaFusionadoEnServicio && result.conversations.length > 0) {
+      const sessionIds = result.conversations.map((conv) => conv.sessionId);
       const estadosMap = await BotConversacionGestion.find({
-        sessionId: { $in: sessionIds },
+        sessionId: { $in: collectSessionIdVariantsForGestion(sessionIds) },
         empresa: empresa.toUpperCase()
       }).lean();
 
       const estadosPorSessionId = {};
-      estadosMap.forEach(estado => { estadosPorSessionId[estado.sessionId] = estado.estado; });
+      estadosMap.forEach(row => {
+        estadosPorSessionId[canonicalSessionIdForGestion(row.sessionId)] = row.estado;
+      });
 
       result.conversations = result.conversations.map(conv => {
-        const esElegible = !conv.herramientasUtilizadas?.tieneAgendarTurno;
-        if (esElegible) {
-          return { ...conv, estado: estadosPorSessionId[conv.sessionId] || 'no_tratado' };
-        }
-        return conv;
+        const k = canonicalSessionIdForGestion(conv.sessionId);
+        return { ...conv, estado: estadosPorSessionId[k] || 'no_tratado' };
       });
     }
-
-    const withMessages = includeMessages === '1' || includeMessages === 'true';
+    aplicarEstadoPorReglaAgendarBotAnalyzer(result.conversations);
 
     if (withMessages) {
       // Esquema: Chat ID, Fecha Último Mensaje, Total Mensajes, Mensaje ID, Rol, Fecha Mensaje, Contenido Herramientas Usadas (sin Session ID, Tipo Chat, Flow Name)
@@ -143,21 +150,21 @@ router.get('/:empresa/export', async (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="conversaciones_${empresa.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csv);
     } else {
-      const rows = ['Session ID;Primer Mensaje;Último Mensaje;Cantidad Mensajes;Agendar Turno;Enviar Correo;Venta;Localidad;Estado'];
+      const rows = ['Session ID;Último Mensaje;Agendar Turno;Enviar Correo;Venta;Localidad;Estado'];
       const formatDate = (d) => {
         if (!d) return '';
         return new Date(d).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       };
 
       for (const conv of result.conversations) {
-        const estado = conv.herramientasUtilizadas?.tieneAgendarTurno ? '-' : (conv.estado || 'no_tratado');
+        const estado = conv.estado === 'agendado' ? '' : conv.estado || 'no_tratado';
         const agendar = conv.herramientasUtilizadas?.tieneAgendarTurno ? 'Sí' : 'No';
         const correo = conv.herramientasUtilizadas?.tieneEnviarCorreo ? 'Sí' : 'No';
         const venta = conv.herramientasUtilizadas?.tieneAgendarTurno
           ? (conv.herramientasUtilizadas?.tieneVenta ? 'Sí' : 'No')
           : '-';
         rows.push(
-          `${escapeCsvValue(conv.sessionId)};${formatDate(conv.firstMessageDate)};${formatDate(conv.lastMessageDate)};${conv.messageCount};${agendar};${correo};${venta};${escapeCsvValue(conv.localidad || '')};${estado}`
+          `${escapeCsvValue(conv.sessionId)};${formatDate(conv.lastMessageDate)};${agendar};${correo};${venta};${escapeCsvValue(conv.localidad || '')};${estado}`
         );
       }
 
@@ -183,7 +190,7 @@ router.get('/:empresa/export', async (req, res) => {
 router.get('/:empresa/conversations', async (req, res) => {
   try {
     const { empresa } = req.params;
-    const { page, limit, sessionId, fechaDesde, fechaHasta, filtroHerramientas, localidad, keyword } = req.query;
+    const { page, limit, sessionId, fechaDesde, fechaHasta, filtroHerramientas, localidad, keyword, estado, citado } = req.query;
 
     // Validar empresa
     if (!validateEmpresa(empresa)) {
@@ -193,6 +200,7 @@ router.get('/:empresa/conversations', async (req, res) => {
       });
     }
 
+    const estadoParsed = parseBotAnalyzerEstadoQuery(estado);
     const filters = {
       page: page ? parseInt(page) : 1,
       limit: limit ? parseInt(limit) : 50,
@@ -201,42 +209,37 @@ router.get('/:empresa/conversations', async (req, res) => {
       fechaHasta,
       filtroHerramientas: ['sin', 'con', 'con_agendar'].includes(filtroHerramientas) ? filtroHerramientas : null,
       localidad: localidad || null,
-      keyword: keyword || null
+      keyword: keyword || null,
+      estado: estadoParsed,
+      citado: citado === 'si' || citado === 'no' ? citado : null
     };
 
     const result = await getConversations(empresa.toUpperCase(), filters);
 
-    // Obtener estados desde BotConversacionGestion para conversaciones elegibles
-    // Elegibles: todas las que NO ejecutaron agendar_turno (cualquier versión)
-    const conversacionesElegibles = result.conversations.filter(conv => 
-      !conv.herramientasUtilizadas?.tieneAgendarTurno
-    );
+    const estadoYaFusionadoEnServicio =
+      estadoParsed === 'tratado' || estadoParsed === 'no_tratado';
 
-    if (conversacionesElegibles.length > 0) {
-      const sessionIds = conversacionesElegibles.map(conv => conv.sessionId);
+    if (!estadoYaFusionadoEnServicio && result.conversations.length > 0) {
+      const sessionIds = result.conversations.map((conv) => conv.sessionId);
       const estadosMap = await BotConversacionGestion.find({
-        sessionId: { $in: sessionIds },
+        sessionId: { $in: collectSessionIdVariantsForGestion(sessionIds) },
         empresa: empresa.toUpperCase()
       }).lean();
 
-      // Crear mapa para acceso rápido
       const estadosPorSessionId = {};
-      estadosMap.forEach(estado => {
-        estadosPorSessionId[estado.sessionId] = estado.estado;
+      estadosMap.forEach(row => {
+        estadosPorSessionId[canonicalSessionIdForGestion(row.sessionId)] = row.estado;
       });
 
-      // Agregar estado a cada conversación elegible
       result.conversations = result.conversations.map(conv => {
-        const esElegible = !conv.herramientasUtilizadas?.tieneAgendarTurno;
-        if (esElegible) {
-          return {
-            ...conv,
-            estado: estadosPorSessionId[conv.sessionId] || 'no_tratado'
-          };
-        }
-        return conv;
+        const k = canonicalSessionIdForGestion(conv.sessionId);
+        return {
+          ...conv,
+          estado: estadosPorSessionId[k] || 'no_tratado'
+        };
       });
     }
+    aplicarEstadoPorReglaAgendarBotAnalyzer(result.conversations);
 
     res.json({
       success: true,
@@ -299,7 +302,7 @@ router.get('/:empresa/conversations/:sessionId', async (req, res) => {
 router.get('/:empresa/search', async (req, res) => {
   try {
     const { empresa } = req.params;
-    const { sessionId, filtroHerramientas, localidad, fechaDesde, fechaHasta, page, limit } = req.query;
+    const { sessionId, filtroHerramientas, localidad, fechaDesde, fechaHasta, page, limit, estado, citado } = req.query;
 
     // Validar empresa
     if (!validateEmpresa(empresa)) {
@@ -316,7 +319,7 @@ router.get('/:empresa/search', async (req, res) => {
       });
     }
 
-    // Llamar a getConversations directamente con los filtros
+    const estadoParsed = parseBotAnalyzerEstadoQuery(estado);
     const filters = {
       sessionId,
       page: page ? parseInt(page) : 1,
@@ -324,9 +327,34 @@ router.get('/:empresa/search', async (req, res) => {
       filtroHerramientas: ['sin', 'con', 'con_agendar'].includes(filtroHerramientas) ? filtroHerramientas : null,
       localidad: localidad || null,
       fechaDesde: fechaDesde || null,
-      fechaHasta: fechaHasta || null
+      fechaHasta: fechaHasta || null,
+      estado: estadoParsed,
+      citado: citado === 'si' || citado === 'no' ? citado : null
     };
     const result = await getConversations(empresa.toUpperCase(), filters);
+
+    const estadoYaFusionadoEnServicio =
+      estadoParsed === 'tratado' || estadoParsed === 'no_tratado';
+
+    if (!estadoYaFusionadoEnServicio && result.conversations.length > 0) {
+      const sessionIds = result.conversations.map((conv) => conv.sessionId);
+      const estadosMap = await BotConversacionGestion.find({
+        sessionId: { $in: collectSessionIdVariantsForGestion(sessionIds) },
+        empresa: empresa.toUpperCase()
+      }).lean();
+      const estadosPorSessionId = {};
+      estadosMap.forEach((row) => {
+        estadosPorSessionId[canonicalSessionIdForGestion(row.sessionId)] = row.estado;
+      });
+      result.conversations = result.conversations.map(conv => {
+        const k = canonicalSessionIdForGestion(conv.sessionId);
+        return {
+          ...conv,
+          estado: estadosPorSessionId[k] || 'no_tratado'
+        };
+      });
+    }
+    aplicarEstadoPorReglaAgendarBotAnalyzer(result.conversations);
 
     res.json({
       success: true,
@@ -359,12 +387,11 @@ router.get('/:empresa/conversations/:sessionId/estado', async (req, res) => {
     }
 
     const gestion = await BotConversacionGestion.findOne({
-      sessionId,
+      sessionId: { $in: collectSessionIdVariantsForGestion([sessionId]) },
       empresa: empresa.toUpperCase()
     });
 
     if (!gestion) {
-      // Si no existe, retornar estado por defecto
       return res.json({
         success: true,
         data: {
@@ -424,9 +451,9 @@ router.put('/:empresa/conversations/:sessionId/estado', async (req, res) => {
       });
     }
 
-    // Buscar o crear registro de gestión
+    const sessionKey = canonicalSessionIdForGestion(sessionId);
     let gestion = await BotConversacionGestion.findOne({
-      sessionId,
+      sessionId: { $in: collectSessionIdVariantsForGestion([sessionId]) },
       empresa: empresa.toUpperCase()
     });
 
@@ -434,7 +461,7 @@ router.put('/:empresa/conversations/:sessionId/estado', async (req, res) => {
 
     if (!gestion) {
       gestion = new BotConversacionGestion({
-        sessionId,
+        sessionId: sessionKey,
         empresa: empresa.toUpperCase(),
         estado: estado,
         logs: []
@@ -489,7 +516,7 @@ router.get('/:empresa/conversations/:sessionId/comentarios', async (req, res) =>
     }
 
     const gestion = await BotConversacionGestion.findOne({
-      sessionId,
+      sessionId: { $in: collectSessionIdVariantsForGestion([sessionId]) },
       empresa: empresa.toUpperCase()
     });
 
@@ -534,22 +561,21 @@ router.post('/:empresa/conversations/:sessionId/comentarios', async (req, res) =
       });
     }
 
-    // Buscar o crear registro de gestión
+    const sessionKey = canonicalSessionIdForGestion(sessionId);
     let gestion = await BotConversacionGestion.findOne({
-      sessionId,
+      sessionId: { $in: collectSessionIdVariantsForGestion([sessionId]) },
       empresa: empresa.toUpperCase()
     });
 
     if (!gestion) {
       gestion = new BotConversacionGestion({
-        sessionId,
+        sessionId: sessionKey,
         empresa: empresa.toUpperCase(),
         estado: 'no_tratado',
         logs: []
       });
     }
 
-    // Agregar log de comentario
     gestion.logs.push({
       timestamp: new Date(),
       usuario,
@@ -608,24 +634,21 @@ router.get('/stats/no-tratados', async (req, res) => {
         if (conversacionesElegibles.length > 0) {
           const sessionIds = conversacionesElegibles.map(conv => conv.sessionId);
           
-          // Obtener estados desde BotConversacionGestion
           const estadosMap = await BotConversacionGestion.find({
-            sessionId: { $in: sessionIds },
+            sessionId: { $in: collectSessionIdVariantsForGestion(sessionIds) },
             empresa: empresa
           }).lean();
 
-          // Crear mapa para acceso rápido
           const estadosPorSessionId = {};
-          estadosMap.forEach(estado => {
-            estadosPorSessionId[estado.sessionId] = estado.estado;
+          estadosMap.forEach((row) => {
+            estadosPorSessionId[canonicalSessionIdForGestion(row.sessionId)] = row.estado;
           });
 
-          // Contar casos "no_tratado" agrupados por localidad
           const porLocalidad = {};
           let total = 0;
 
           conversacionesElegibles.forEach(conv => {
-            const estado = estadosPorSessionId[conv.sessionId];
+            const estado = estadosPorSessionId[canonicalSessionIdForGestion(conv.sessionId)];
             // Si no tiene registro o tiene estado "no_tratado", cuenta como no tratado
             if (!estado || estado === 'no_tratado') {
               total++;

@@ -1,4 +1,4 @@
-﻿import Cita from '../models/Cita.js';
+import Cita from '../models/Cita.js';
 import Ingreso from '../models/Ingreso.js';
 import Configuracion from '../models/Configuracion.js';
 import Comentario from '../models/Comentario.js';
@@ -14,6 +14,33 @@ const normalizarMatricula = (matricula) => {
     .replace(/[^A-Z0-9]/g, '');
 };
 
+/** Express puede entregar string | string[]; si no coincide con 'asistio'|'noAsistio', antes se devolvía todo mezclado. */
+function normalizeEstadoAsistencia(raw) {
+  if (raw == null || raw === '') return 'todos';
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  let s = String(v).trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+  s = s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[\s_-]/g, '');
+  if (s === 'asistio') return 'asistio';
+  if (s === 'noasistio') return 'noAsistio';
+  if (s === 'todos') return 'todos';
+  return 'todos';
+}
+
+/** Campos mínimos para listado Asistencia (menos I/O y parseo en MongoDB) */
+const CITA_LIST_FIELDS = {
+  Referencia: 1,
+  'Fecha ci': 1,
+  'Hora ': 1,
+  Matricula: 1,
+  'Marca/modelo': 1,
+  Averia: 1,
+  Taller: 1
+};
+
 /**
  * Obtiene todas las citas con informaciÃ³n de asistencia
  * @param {Object} filters - Filtros de bÃºsqueda
@@ -22,6 +49,9 @@ const normalizarMatricula = (matricula) => {
  */
 export async function getCitasConAsistencia(filters = {}, pagination = {}) {
   try {
+    const debugAsistencia =
+      process.env.DEBUG_ASISTENCIA === '1' || process.env.DEBUG_ASISTENCIA === 'true';
+
     const {
       search = '',
       fechaDesde = '',
@@ -29,8 +59,10 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
       taller = '',
       nombre = '',
       matricula = '',
-      estadoAsistencia = 'todos'
+      estadoAsistencia: estadoAsistenciaRaw = 'todos'
     } = filters;
+
+    const estadoAsistencia = normalizeEstadoAsistencia(estadoAsistenciaRaw);
 
     const {
       page = 1,
@@ -150,16 +182,18 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
       console.log(`📊 Procesando TODAS las citas (${totalCitasBase}) para aplicar filtro de asistencia antes de paginar...`);
       
       citasParaProcesar = await Cita.find(citasFilter)
+        .select(CITA_LIST_FIELDS)
         .sort({ 'Fecha ci': -1 })
         .lean(); // Sin límite - procesar todas las citas
     } else {
       // Sin filtro de asistencia, obtener solo las citas de la página actual
       const startIndex = (page - 1) * LIMITE_FIJO;
       citasParaProcesar = await Cita.find(citasFilter)
-      .sort({ 'Fecha ci': -1 })
-      .skip(startIndex)
+        .select(CITA_LIST_FIELDS)
+        .sort({ 'Fecha ci': -1 })
+        .skip(startIndex)
         .limit(LIMITE_FIJO)
-      .lean();
+        .lean();
     }
     
     // Función auxiliar para normalizar fechas (definida antes de usarse)
@@ -277,7 +311,7 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
           
           // Filtrar ingresos por fecha: solo buscar ingresos desde la fecha mÃ­nima de las citas menos la tolerancia
           // Esto optimiza la bÃºsqueda y evita traer ingresos muy antiguos
-          const fechaMinimaCita = Math.min(...citas.map(c => {
+          const fechaMinimaCita = Math.min(...citasParaProcesar.map(c => {
             const fecha = normalizarFecha(c['Fecha ci']);
             return fecha || Infinity;
           }).filter(f => f !== Infinity));
@@ -325,7 +359,7 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
           } else {
             // Si no hay ingresos sin filtro de fecha, mostrar las matrículas que se están buscando
             console.log(`⚠️ No se encontraron ingresos para las matrículas buscadas. Matrículas de las citas (primeras 5):`);
-            citas.slice(0, 5).forEach(c => {
+            citasParaProcesar.slice(0, 5).forEach(c => {
               const matNorm = normalizarMatricula(c.Matricula);
               console.log(`   - Cita ${c.Referencia}: Matrícula original "${c.Matricula}", normalizada "${matNorm}"`);
             });
@@ -393,7 +427,9 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
             return;
           }
           
-          console.log(`✅ Procesando ingreso ${ingreso.Referencia}: Matrícula raw "${matriculaValue}" (campo: ${nombreCampoMatricula}), normalizada "${matriculaNormalizadaIngreso}"`);
+          if (debugAsistencia) {
+            console.log(`✅ Procesando ingreso ${ingreso.Referencia}: Matrícula raw "${matriculaValue}" (campo: ${nombreCampoMatricula}), normalizada "${matriculaNormalizadaIngreso}"`);
+          }
 
           const clavesAdicionales = [];
 
@@ -523,6 +559,34 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
         console.log(`      - Cita ${m.referencia}: "${m.matriculaOriginal}" -> "${m.matriculaNormalizada}" - ¿En mapa? ${m.enMapa ? '✅' : '❌'}`);
       });
     }
+
+    const referenciasBatch = [
+      ...new Set(
+        citasParaProcesar
+          .map((c) => c.Referencia)
+          .filter((r) => r != null && r !== '')
+          .map((r) => String(r))
+      )
+    ];
+    const comentariosPorReferencia = new Map();
+    const gestionPorReferencia = new Map();
+    if (referenciasBatch.length > 0) {
+      const [comentarioAgg, gestionesDocs] = await Promise.all([
+        Comentario.aggregate([
+          { $match: { referencia: { $in: referenciasBatch }, tipo: 'cita' } },
+          { $group: { _id: '$referencia', total: { $sum: 1 } } }
+        ]),
+        CitaGestion.find({ citaReferencia: { $in: referenciasBatch } })
+          .select({ citaReferencia: 1, estado: 1, subEstado: 1, alarma: 1 })
+          .lean()
+      ]);
+      for (const row of comentarioAgg) {
+        comentariosPorReferencia.set(String(row._id), row.total);
+      }
+      for (const g of gestionesDocs) {
+        gestionPorReferencia.set(String(g.citaReferencia), g);
+      }
+    }
     
     // Contador para logs detallados (solo primeras 10 citas)
     let contadorLogs = 0;
@@ -532,21 +596,19 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
       let tieneAsistencia = false;
       let ingresoReferencia = null;
       let fechaIngreso = null;
-      let totalComentarios = 0;
 
       // Verificar asistencia usando el mapa de ingresos
       const matriculaNormalizada = normalizarMatricula(cita.Matricula);
       const mostrarLogsDetallados = contadorLogs < MAX_LOGS_DETALLADOS;
       
-      if (mostrarLogsDetallados) {
+      if (debugAsistencia && mostrarLogsDetallados) {
         console.log(`\n🔍 [${contadorLogs + 1}] Procesando cita ${cita.Referencia}:`);
         console.log(`   - Matrícula original: "${cita.Matricula}"`);
         console.log(`   - Matrícula normalizada: "${matriculaNormalizada}"`);
         console.log(`   - Fecha cita: ${cita['Fecha ci'] ? new Date(cita['Fecha ci']).toISOString() : 'N/A'}`);
       }
       
-      // Log inicial para debugging
-      if (!cita.Matricula || !cita['Fecha ci']) {
+      if (debugAsistencia && (!cita.Matricula || !cita['Fecha ci'])) {
         console.log(`⚠️ Cita ${cita.Referencia}: Sin matrícula o fecha - Matrícula: ${cita.Matricula}, Fecha: ${cita['Fecha ci']}`);
       }
 
@@ -557,7 +619,7 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
             clave.includes(matriculaNormalizada.substring(0, 3)) || 
             matriculaNormalizada.includes(clave.substring(0, 3))
           );
-          if (clavesSimilares.length > 0) {
+          if (debugAsistencia && clavesSimilares.length > 0) {
             console.log(`âš ï¸ MatrÃ­cula ${matriculaNormalizada} (cita ${cita.Referencia}) no encontrada en mapa, pero hay claves similares: ${clavesSimilares.slice(0, 3).join(', ')}`);
           }
         }
@@ -640,15 +702,16 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
           // Buscar ingreso en el mapa
           const ingresosCita = ingresosMap.get(matriculaNormalizada);
 
-          console.log(`ðŸ” Buscando ingresos para ${matriculaNormalizada} (cita ${cita.Referencia}). Â¿Existe? ${ingresosMap.has(matriculaNormalizada)}`);
-
-          if (!ingresosCita || ingresosCita.length === 0) {
-            console.log(`âš ï¸ No se encontraron ingresos normalizados para ${matriculaNormalizada} (cita ${cita.Referencia})`);
-          } else {
-            console.log(`ðŸ” Evaluando ${ingresosCita.length} ingresos para ${matriculaNormalizada} (cita ${cita.Referencia})`);
-            ingresosCita.forEach(ingreso => {
-              console.log(`   • Ingreso ${ingreso.Referencia} - Matricula raw "${ingreso['Matrícula vehí']}" - Fecha ${ingreso.Fecaper}`);
-            });
+          if (debugAsistencia) {
+            console.log(`ðŸ” Buscando ingresos para ${matriculaNormalizada} (cita ${cita.Referencia}). Â¿Existe? ${ingresosMap.has(matriculaNormalizada)}`);
+            if (!ingresosCita || ingresosCita.length === 0) {
+              console.log(`âš ï¸ No se encontraron ingresos normalizados para ${matriculaNormalizada} (cita ${cita.Referencia})`);
+            } else {
+              console.log(`ðŸ” Evaluando ${ingresosCita.length} ingresos para ${matriculaNormalizada} (cita ${cita.Referencia})`);
+              ingresosCita.forEach(ingreso => {
+                console.log(`   • Ingreso ${ingreso.Referencia} - Matricula raw "${ingreso['Matrícula vehí']}" - Fecha ${ingreso.Fecaper}`);
+              });
+            }
           }
 
           const ingresoEncontrado = ingresosCita?.find(ingreso => {
@@ -658,8 +721,7 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
             const diffDias = diffMs / (1000 * 60 * 60 * 24);
             const dentroTolerancia = estaDentroDeTolerancia(fechaCita, ingreso.Fecaper);
             
-            // Log detallado para debugging - mostrar todas las comparaciones cuando hay pocos ingresos
-            if (ingresosCita.length <= 5 || Math.abs(diffDias) <= diasTolerancia + 2) {
+            if (debugAsistencia && (ingresosCita.length <= 5 || Math.abs(diffDias) <= diasTolerancia + 2)) {
               console.log(`   ðŸ” Comparando: Cita ${new Date(fechaCita).toISOString()} (norm: ${fechaCitaNorm}) vs Ingreso ${new Date(ingreso.Fecaper).toISOString()} (norm: ${fechaIngresoNorm})`);
               console.log(`      Diferencia: ${diffDias.toFixed(2)} dÃ­as, Tolerancia: ${diasTolerancia}, Dentro: ${dentroTolerancia}, Es posterior: ${diffMs >= 0}`);
             }
@@ -671,15 +733,16 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
             tieneAsistencia = true;
             ingresoReferencia = ingresoEncontrado.Referencia;
             fechaIngreso = ingresoEncontrado.Fecaper;
-            const fechaCitaNorm = normalizarFecha(fechaCita);
-            const fechaIngresoNorm = normalizarFecha(fechaIngreso);
-            const diffDias = (fechaIngresoNorm - fechaCitaNorm) / (1000 * 60 * 60 * 24);
-            console.log(`âœ… Ingreso encontrado para ${matriculaNormalizada}: ${ingresoReferencia} (fecha ${fechaIngreso}) con diferencia ${diffDias.toFixed(2)} dÃ­as (tolerancia: ${diasTolerancia})`);
-          } else if (ingresosCita && ingresosCita.length > 0) {
+            if (debugAsistencia) {
+              const fechaCitaNorm = normalizarFecha(fechaCita);
+              const fechaIngresoNorm = normalizarFecha(fechaIngreso);
+              const diffDias = (fechaIngresoNorm - fechaCitaNorm) / (1000 * 60 * 60 * 24);
+              console.log(`âœ… Ingreso encontrado para ${matriculaNormalizada}: ${ingresoReferencia} (fecha ${fechaIngreso}) con diferencia ${diffDias.toFixed(2)} dÃ­as (tolerancia: ${diasTolerancia})`);
+            }
+          } else if (debugAsistencia && ingresosCita && ingresosCita.length > 0) {
             const fechaCitaNormalizada = normalizarFecha(fechaCita);
             const fechaCitaDate = new Date(fechaCita);
             console.log(`âŒ No se encontrÃ³ ingreso en rango para ${matriculaNormalizada}. Fecha cita ${fechaCitaDate.toISOString()} (norm: ${fechaCitaNormalizada}, local: ${fechaCitaDate.toLocaleDateString('es-AR')})`);
-            // Mostrar TODOS los ingresos disponibles para debugging
             console.log(`   ðŸ“‹ Total ingresos disponibles: ${ingresosCita.length}`);
             ingresosCita.forEach(ing => {
               const fechaIngNorm = normalizarFecha(ing.Fecaper);
@@ -696,15 +759,9 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
         }
       }
 
-      if (cita.Referencia) {
-        totalComentarios = await Comentario.countDocuments({
-          referencia: cita.Referencia,
-          tipo: 'cita'
-        }).catch(error => {
-          console.warn(`Error contando comentarios para cita ${cita.Referencia}:`, error.message);
-          return 0;
-        });
-      }
+      const refKey =
+        cita.Referencia != null && cita.Referencia !== '' ? String(cita.Referencia) : '';
+      const totalComentarios = refKey ? (comentariosPorReferencia.get(refKey) ?? 0) : 0;
 
       // Obtener estado de gestión de la cita
       // Por defecto:
@@ -714,23 +771,22 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
       let subEstadoGestion = tieneAsistencia ? null : 'pendiente';
       let alarmaGestion = null;
       let tieneCitaGestion = false;
-      if (cita.Referencia) {
-        const citaGestion = await CitaGestion.findOne({ citaReferencia: cita.Referencia }).lean().catch(() => null);
+      if (refKey) {
+        const citaGestion = gestionPorReferencia.get(refKey);
         if (citaGestion) {
           tieneCitaGestion = true;
-          // Si existe CitaGestion, usar su estado (no sobrescribir)
           estadoGestion = citaGestion.estado;
           subEstadoGestion = citaGestion.subEstado;
           alarmaGestion = citaGestion.alarma;
         }
       }
 
-      // Asegurar que tieneAsistencia sea siempre un boolean explícito
-      const tieneAsistenciaFinal = Boolean(tieneAsistencia);
+      // Solo true si hubo ingreso en tolerancia (no usar Boolean(): evita ambigüedades)
+      const tieneAsistenciaFinal = tieneAsistencia === true;
 
       const citaConAsistencia = {
         ...cita,
-        tieneAsistencia: tieneAsistenciaFinal, // Asegurar que sea boolean explícito
+        tieneAsistencia: tieneAsistenciaFinal,
         ingresoReferencia,
         fechaIngreso,
         totalComentarios,
@@ -741,7 +797,7 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
       };
 
       // Log final para verificar clasificación
-      if (mostrarLogsDetallados) {
+      if (debugAsistencia && mostrarLogsDetallados) {
         console.log(`   📊 RESULTADO FINAL para cita ${cita.Referencia}:`);
         console.log(`      - tieneAsistencia: ${tieneAsistenciaFinal ? '✅ SÍ' : '❌ NO'} (tipo: ${typeof tieneAsistenciaFinal}, valor: ${tieneAsistenciaFinal})`);
         console.log(`      - estado: ${estadoGestion}`);
@@ -819,47 +875,26 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
     // Filtrar por estado de asistencia
     let citasFiltradas = citasConAsistencia || [];
     if (estadoAsistencia === 'asistio') {
-      citasFiltradas = citasConAsistencia.filter(cita => {
-        // Asegurar que tieneAsistencia sea boolean
-        const tieneAsistencia = Boolean(cita.tieneAsistencia);
-        return tieneAsistencia === true;
-      });
+      citasFiltradas = citasConAsistencia.filter((cita) => cita.tieneAsistencia === true);
       console.log(`📊 Filtro "asistio": ${citasFiltradas.length} citas de ${citasConAsistencia.length} procesadas`);
     } else if (estadoAsistencia === 'noAsistio') {
-      // Filtrar por "No asistió" Y estado "Abierto (Pendiente)" para ser consistente con el dashboard
-      // La lógica debe ser idéntica a la del dashboard: solo incluir si no tiene CitaGestion O si tiene estado='abierto' y subEstado='pendiente'
+      // Todas las citas sin asistencia en el rango (sin exigir CitaGestion abierta/pendiente).
+      // El filtro extra por gestión ocultaba filas que el usuario ve como "No asistió" en la tabla.
       const antesFiltro = citasConAsistencia.length;
-      citasFiltradas = citasConAsistencia.filter(cita => {
-        // Asegurar que tieneAsistencia sea boolean
-        const tieneAsistencia = Boolean(cita.tieneAsistencia);
-        
-        // PRIMERO: Debe ser "No asistió"
-        if (tieneAsistencia === true) {
-          return false; // Excluir citas con asistencia
-        }
-        
-        // SEGUNDO: Verificar estado de gestión (misma lógica que dashboard)
-        // Si no tiene CitaGestion, se considera abierto pendiente por defecto
-        if (!cita.tieneCitaGestion) {
-          return true; // Sin CitaGestion = abierto pendiente por defecto
-        }
-        
-        // Si tiene CitaGestion, debe estar abierto y pendiente
-        return cita.estado === 'abierto' && cita.subEstado === 'pendiente';
-      });
+      citasFiltradas = citasConAsistencia.filter((cita) => cita.tieneAsistencia !== true);
       
       // Verificar que no haya citas con asistencia en el resultado
-      const citasConAsistenciaEnResultado = citasFiltradas.filter(c => Boolean(c.tieneAsistencia) === true);
+      const citasConAsistenciaEnResultado = citasFiltradas.filter((c) => c.tieneAsistencia === true);
       if (citasConAsistenciaEnResultado.length > 0) {
         console.error(`❌ ERROR CRÍTICO: Filtro "noAsistio" pero ${citasConAsistenciaEnResultado.length} citas tienen asistencia en resultado!`);
         citasConAsistenciaEnResultado.forEach(c => {
           console.error(`   - Cita ${c.Referencia} tiene asistencia: ${c.tieneAsistencia}`);
         });
         // Filtrar nuevamente para corregir
-        citasFiltradas = citasFiltradas.filter(c => Boolean(c.tieneAsistencia) === false);
+        citasFiltradas = citasFiltradas.filter((c) => c.tieneAsistencia !== true);
       }
       
-      console.log(`📊 Filtro "noAsistio": ${citasFiltradas.length} citas de ${antesFiltro} procesadas (${citasConAsistencia.filter(c => !Boolean(c.tieneAsistencia)).length} sin asistencia total)`);
+      console.log(`📊 Filtro "noAsistio": ${citasFiltradas.length} citas de ${antesFiltro} procesadas (${citasConAsistencia.filter((c) => c.tieneAsistencia !== true).length} sin asistencia total)`);
     }
     
     // Si hay filtro de asistencia, aplicar paginación DESPUÉS del filtrado
@@ -883,10 +918,8 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
     console.log(`📊 Página actual: ${page}, Citas en página: ${citasPaginadas.length}`);
     if (estadoAsistencia === 'noAsistio') {
       const sinCitaGestion = citasFiltradas.filter(c => !c.tieneCitaGestion).length;
-      const conCitaGestionAbiertoPendiente = citasFiltradas.filter(c => c.tieneCitaGestion && c.estado === 'abierto' && c.subEstado === 'pendiente').length;
-      console.log(`📊 Citas "no asistió" filtradas - Sin CitaGestion: ${sinCitaGestion}, Con CitaGestion abierto/pendiente: ${conCitaGestionAbiertoPendiente}`);
-      console.log(`📊 Citas sin asistencia en página: ${citasConAsistencia.filter(c => !c.tieneAsistencia).length}`);
-      console.log(`📊 Citas sin asistencia que NO cumplen filtro estado: ${citasConAsistencia.filter(c => !c.tieneAsistencia && !(!c.tieneCitaGestion || (c.estado === 'abierto' && c.subEstado === 'pendiente'))).length}`);
+      const conGestionOtro = citasFiltradas.length - sinCitaGestion;
+      console.log(`📊 "No asistió" en lista: ${citasFiltradas.length} (sin CitaGestion: ${sinCitaGestion}, con gestión: ${conGestionOtro})`);
     }
 
     // Calcular total para paginación
@@ -951,6 +984,16 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
         c.tieneAsistencia = false;
       });
     }
+
+    // Normalizar a booleano estricto y re-filtrar por estado (defensa ante datos raros o regresiones)
+    for (const cita of citasPaginadas) {
+      cita.tieneAsistencia = cita.tieneAsistencia === true;
+    }
+    if (estadoAsistencia === 'asistio') {
+      citasPaginadas = citasPaginadas.filter((c) => c.tieneAsistencia === true);
+    } else if (estadoAsistencia === 'noAsistio') {
+      citasPaginadas = citasPaginadas.filter((c) => c.tieneAsistencia !== true);
+    }
     
     // Log final de lo que se devuelve
     const conAsistenciaDevueltas = citasPaginadas.filter(c => c.tieneAsistencia === true).length;
@@ -978,17 +1021,6 @@ export async function getCitasConAsistencia(filters = {}, pagination = {}) {
     }
     console.log(`   - Total estimado: ${totalEstimado}`);
     console.log(`   - Total páginas: ${totalPages}`);
-    
-    // Verificar que todas las citas tengan el campo correctamente
-    citasPaginadas.forEach((cita, index) => {
-      if (!('tieneAsistencia' in cita)) {
-        console.error(`   ❌ Cita ${index + 1} (${cita.Referencia}) NO tiene campo tieneAsistencia`);
-        cita.tieneAsistencia = false; // Fallback
-      } else if (typeof cita.tieneAsistencia !== 'boolean') {
-        console.error(`   ❌ Cita ${index + 1} (${cita.Referencia}) tiene tieneAsistencia=${cita.tieneAsistencia} (no es boolean)`);
-        cita.tieneAsistencia = Boolean(cita.tieneAsistencia); // Convertir a boolean
-      }
-    });
 
     return {
       data: citasPaginadas,

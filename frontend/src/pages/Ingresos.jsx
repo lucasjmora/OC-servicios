@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getIngresos, getMappings, getUniqueValues, exportIngresosStream } from '../services/api';
+import {
+  getIngresos,
+  getMappings,
+  getUniqueValues,
+  exportIngresosStream,
+  getTalleresOcultos
+} from '../services/api';
 import PageHeader from '../components/PageHeader';
 import Filters from '../components/Filters';
 import Table from '../components/Table';
@@ -45,13 +51,16 @@ const Ingresos = ({ onlyEstadC = false }) => {
 
   const loadTalleres = async () => {
     try {
-      const [mappingsRes, talleresRes] = await Promise.all([
+      const [mappingsRes, talleresRes, ocultosRes] = await Promise.all([
         getMappings('talleres'),
-        getUniqueValues('ingresos', 'Taller')
+        getUniqueValues('ingresos', 'Taller'),
+        getTalleresOcultos()
       ]);
 
       setTalleresMapping(mappingsRes.data || {});
-      setTalleresList((talleresRes.data || []).sort());
+      const ocultosSet = new Set((ocultosRes.data?.ocultos || []).map(String));
+      const visibles = (talleresRes.data || []).filter((c) => !ocultosSet.has(String(c)));
+      setTalleresList(visibles.sort());
     } catch (error) {
       console.error('Error cargando talleres:', error);
     }
